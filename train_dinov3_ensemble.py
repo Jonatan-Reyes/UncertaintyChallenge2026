@@ -157,7 +157,10 @@ class DinoV3LoraExpert(nn.Module):
 def timm_create_backbone(backbone_id: str) -> nn.Module:
     import timm
 
-    backbone = timm.create_model(backbone_id, pretrained=True, num_classes=0)
+    backbone = timm.create_model(
+        backbone_id, pretrained=True, num_classes=0,
+        dynamic_img_size=True, dynamic_img_pad=True,
+    )
     for p in backbone.parameters():
         p.requires_grad_(False)
     backbone.eval()

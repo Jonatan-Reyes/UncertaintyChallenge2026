@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# 2xH100 DDP runs of the native full-image DINOv3+LoRA deep ensemble.
+# 2xH100 DDP runs of the DINOv2 Giant full-image deep ensemble.
 #
-#   DINOv3-base (frozen) + LoRA on the last block + linear head
-#   native resolution + per-batch width padding (DistributedWidthBucketSampler)
-#   bf16 autocast, 5 experts x 30 epochs
-#   resolution ramp 75% -> 50% -> 25% (2 epochs each), then full res
+#   DINOv2-Giant (frozen) + LoRA on the last block + linear head
+#   fixed 518x518 input (Giant's native grid; --full-image Resize)
+#   bf16 autocast, 5 experts x 15 epochs
 #   per-rank batch 96 (global 192), lr 2e-4, cosine (no warmup), patience 6
 #
 # Two legs (both DDP, 2xH100):
@@ -17,6 +16,8 @@
 #      script uses $CONDA_PREFIX/bin/python and .../bin/torchrun automatically
 #   2. prepared challenge_data/ at $DATA (rsync from the dev box; runs/ not needed)
 #   3. two GPUs visible:  python -c "import torch; print(torch.cuda.device_count())" == 2
+#   4. DINOv2-Giant pretrained weights reachable from edda (HF download ~1.8GB on
+#      first run). If HF is blocked, rsync ~/.cache/huggingface from the dev box.
 #
 # Run inside tmux:
 #   tmux new-session -s edda "bash run_edda.sh"     # detach: Ctrl-b d
@@ -77,18 +78,18 @@ for p in class_mapping.json train/images val/images test_public/images; do
 done
 
 N_EXPERTS="${N_EXPERTS:-5}"
-EPOCHS="${EPOCHS:-30}"
+EPOCHS="${EPOCHS:-15}"
 BATCH="${BATCH:-96}"     # per rank; global = 2 x 96 = 192
 LR="${LR:-2e-4}"
 WARMUP="${WARMUP:-0}"
 WORKERS="${WORKERS:-8}"
 PATIENCE="${PATIENCE:-6}"
 N_CLUSTERS="${N_CLUSTERS:-5}"
-RAMP_SCALES="${RAMP_SCALES:-0.75 0.5 0.25}"
-RAMP_EPOCHS="${RAMP_EPOCHS:-2}"
+BACKBONE="${BACKBONE:-vit_giant_patch14_dinov2.lvd142m}"
+IMG_SIZE="${IMG_SIZE:-518}"
 
-OUT_NORMAL="${OUT:-$RUNS/ensemble_dinov3_raw_native_edda_h100}"
-OUT_CLUSTER="$RUNS/ensemble_dinov3_raw_native_edda_h100_cluster"
+OUT_NORMAL="${OUT:-$RUNS/ensemble_dinov2_giant_518_edda_h100}"
+OUT_CLUSTER="$RUNS/ensemble_dinov2_giant_518_edda_h100_cluster"
 
 export PYTHONUNBUFFERED=1
 
@@ -101,7 +102,9 @@ run_leg() {
     train_dinov3_ensemble.py \
     --data-root "$DATA" \
     --output-dir "$out" \
-    --native --amp-bf16 \
+    --backbone "$BACKBONE" \
+    --img-size "$IMG_SIZE" --full-image \
+    --amp-bf16 \
     --lora-last-layers 1 \
     --n-experts "$N_EXPERTS" \
     --epochs "$EPOCHS" \
@@ -113,14 +116,12 @@ run_leg() {
     --mixup-alpha 0.2 \
     --patience "$PATIENCE" \
     --num-workers "$WORKERS" \
-    --ramp-scales $RAMP_SCALES \
-    --ramp-epochs "$RAMP_EPOCHS" \
     "$@" \
     2>&1 | tee "$out/train.log"
 }
 
 echo "=== Leg A: non-cluster, $N_EXPERTS leave-one-out experts, no gate ==="
-echo "    $EPOCHS epochs, ramp '$RAMP_SCALES' x$RAMP_EPOCHS epochs each, per-rank bs $BATCH (global $((BATCH * 2)))"
+echo "    $BACKBONE @${IMG_SIZE}px, $EPOCHS epochs, per-rank bs $BATCH (global $((BATCH * 2)))"
 run_leg "$OUT_NORMAL" --no-gate
 
 echo
