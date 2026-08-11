@@ -265,6 +265,7 @@ def train(
     num_workers: int = 4,
     backbone: str = DEFAULT_BACKBONE,
     pretrained: bool = False,
+    device_idx: int | None = None,
     use_lora: bool = False,
     lora_r: int = 8,
     lora_alpha: int = 16,
@@ -273,7 +274,7 @@ def train(
     modules_to_save: tuple[str, ...] = ("head",),
     early_stop_metric: str = "accuracy",
 ) -> None:
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{device_idx}" if torch.cuda.is_available() and device_idx is not None else "cpu")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
