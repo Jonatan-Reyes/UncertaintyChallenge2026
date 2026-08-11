@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -51,7 +52,7 @@ def main() -> None:
 
     expert_dir = out_dir / "experts"
     ckpts = sorted(expert_dir.glob("expert_seed*.pt"),
-                   key=lambda p: int(p.stem.split("_")[1]))
+                   key=lambda p: int(re.search(r"\d+", p.stem).group()))
     if not ckpts:
         raise FileNotFoundError(f"no expert_seed*.pt found in {expert_dir}")
     print(f"found {len(ckpts)} experts: {[p.name for p in ckpts]}")
