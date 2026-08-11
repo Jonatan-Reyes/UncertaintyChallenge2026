@@ -225,6 +225,7 @@ def save_checkpoint(
     temperature: float,
     path: Path,
     hyperparameters: dict | None = None,
+    calibration: dict | None = None,
 ) -> None:
     ckpt = {
         "state_dict": model.state_dict(),
@@ -242,6 +243,8 @@ def save_checkpoint(
             ckpt["img_size"] = int(img_size[0]) if isinstance(img_size, (tuple, list)) else int(img_size)
     if hyperparameters is not None:
         ckpt["hyperparameters"] = dict(hyperparameters)
+    if calibration is not None:
+        ckpt["calibration"] = dict(calibration)
     torch.save(ckpt, path)
 
 

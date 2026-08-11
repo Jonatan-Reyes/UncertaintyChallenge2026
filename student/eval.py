@@ -24,12 +24,13 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+from student.calibration import apply_calibration_to_logits, checkpoint_calibration
 from student.data import IWildCamChallengeDataset, default_eval_transform
 from student.metrics import compute_all_metrics
 from student.model import DEFAULT_BACKBONE, Classifier
 
 
-def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
+def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, dict]:
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     backbone_name = ckpt.get("backbone", DEFAULT_BACKBONE)
     model = Classifier(
@@ -40,7 +41,7 @@ def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
     )
     model.load_state_dict(ckpt["state_dict"])
     model.to(device).eval()
-    return model, float(ckpt.get("temperature", 1.0))
+    return model, checkpoint_calibration(ckpt)
 
 
 def eval_transform_for_checkpoint(ckpt_path: Path):
@@ -51,7 +52,7 @@ def eval_transform_for_checkpoint(ckpt_path: Path):
 
 
 def collect_predictions(
-    model: nn.Module, loader: DataLoader, device, temperature: float = 1.0
+    model: nn.Module, loader: DataLoader, device, calibration: dict | float | None = None
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run ``model`` over ``loader`` and return ``(probs, labels)`` as np arrays."""
     model.eval()
@@ -60,16 +61,16 @@ def collect_predictions(
         for imgs, labels in loader:
             imgs = imgs.to(device)
             logits = model(imgs)
-            probs = torch.softmax(logits / temperature, dim=1)
+            probs = apply_calibration_to_logits(logits, calibration)
             all_probs.append(probs.cpu().numpy())
             all_labels.append(np.asarray(labels))
     return np.concatenate(all_probs, axis=0), np.concatenate(all_labels, axis=0)
 
 
 def evaluate(
-    model: nn.Module, loader: DataLoader, device, temperature: float = 1.0
+    model: nn.Module, loader: DataLoader, device, calibration: dict | float | None = None
 ) -> dict:
-    probs, labels = collect_predictions(model, loader, device, temperature)
+    probs, labels = collect_predictions(model, loader, device, calibration)
     return compute_all_metrics(probs, labels)
 
 
@@ -83,11 +84,11 @@ def main() -> None:
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, temperature = load_checkpoint(args.checkpoint, device)
+    model, calibration = load_checkpoint(args.checkpoint, device)
     val_ds = IWildCamChallengeDataset(args.data_root, "val", eval_transform_for_checkpoint(args.checkpoint))
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False,
                             num_workers=args.num_workers)
-    metrics = evaluate(model, val_loader, device, temperature)
+    metrics = evaluate(model, val_loader, device, calibration)
     print(json.dumps(metrics, indent=2))
 
 

@@ -22,6 +22,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
+from student.calibration import apply_calibration_to_logits, describe_calibration
 from student.data import IWildCamChallengeDataset
 from student.eval import eval_transform_for_checkpoint, load_checkpoint
 
@@ -29,7 +30,7 @@ DEFAULT_SPLITS: tuple[str, ...] = ("test_public", "test_private")
 
 
 def collect_test_predictions(
-    model, loader: DataLoader, device, temperature: float = 1.0
+    model, loader: DataLoader, device, calibration: dict | float | None = None
 ) -> tuple[list[str], np.ndarray]:
     """Run model on the loader; return (uids in batch order, probs as np array)."""
     model.eval()
@@ -39,7 +40,7 @@ def collect_test_predictions(
         for imgs, batch_uids in loader:
             imgs = imgs.to(device)
             logits = model(imgs)
-            probs = torch.softmax(logits / temperature, dim=1)
+            probs = apply_calibration_to_logits(logits, calibration)
             probs_chunks.append(probs.cpu().numpy())
             uids.extend(batch_uids)
     return uids, np.concatenate(probs_chunks, axis=0)
@@ -68,7 +69,7 @@ def predict(
     splits: tuple[str, ...] = DEFAULT_SPLITS,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, T = load_checkpoint(checkpoint, device)
+    model, calibration = load_checkpoint(checkpoint, device)
     transform = eval_transform_for_checkpoint(checkpoint)
 
     all_uids: list[str] = []
@@ -76,13 +77,16 @@ def predict(
     for split in splits:
         ds = IWildCamChallengeDataset(data_root, split, transform)
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-        uids, probs = collect_test_predictions(model, loader, device, temperature=T)
+        uids, probs = collect_test_predictions(model, loader, device, calibration=calibration)
         all_uids.extend(uids)
         all_probs.append(probs)
 
     probs = np.concatenate(all_probs, axis=0)
     write_submission(all_uids, probs, output)
-    print(f"wrote {output} ({len(all_uids)} rows, {probs.shape[1]} classes, T={T:.4f})")
+    print(
+        f"wrote {output} ({len(all_uids)} rows, {probs.shape[1]} classes, "
+        f"calibration={describe_calibration(calibration)})"
+    )
 
 
 def main() -> None:

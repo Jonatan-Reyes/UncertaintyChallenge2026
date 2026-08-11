@@ -25,6 +25,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from student import metrics as M
+from student.calibration import apply_calibration_to_logits, describe_calibration, fit_beta_calibration
 from student.model import Classifier
 from student.train import fit_temperature, save_checkpoint
 
@@ -40,12 +41,17 @@ def load_split(features_dir: Path, split: str, pooling: str = "embeddings"):
     return embeddings, labels, domains, uids
 
 
-def evaluate_probe(head: nn.Linear, embeddings: torch.Tensor, labels: torch.Tensor,
-                    device, temperature: float = 1.0) -> dict:
+def evaluate_probe(
+    head: nn.Linear,
+    embeddings: torch.Tensor,
+    labels: torch.Tensor,
+    device,
+    calibration: dict | float | None = None,
+) -> dict:
     head.eval()
     with torch.no_grad():
         logits = head(embeddings.to(device))
-        probs = torch.softmax(logits / temperature, dim=1).cpu().numpy()
+        probs = apply_calibration_to_logits(logits, calibration).cpu().numpy()
     return M.compute_all_metrics(probs, labels.numpy())
 
 
@@ -63,6 +69,9 @@ def train_probe(
     label_smoothing: float = 0.0,
     brier_weight: float = 0.0,
     seed: int | None = None,
+    calibration: str = "temperature",
+    beta_l2: float = 1e-4,
+    beta_max_iter: int = 200,
 ) -> None:
     """``extra_train_features_dirs``: additional feature caches (e.g. an
     aspect-preserving-crop extraction alongside the default squash one) whose
@@ -165,6 +174,9 @@ def train_probe(
         "label_smoothing": label_smoothing,
         "brier_weight": brier_weight,
         "seed": seed,
+        "calibration": calibration,
+        "beta_l2": beta_l2,
+        "beta_max_iter": beta_max_iter,
         "method": "linear_probe",
     }
     (out_dir / "config.json").write_text(json.dumps(hparams, indent=2))
@@ -173,19 +185,61 @@ def train_probe(
     print("saved model.pt")
 
     val_logits_all = head(val_emb_dev).detach()
-    T = fit_temperature(val_logits_all, val_labels.to(device))
-    save_checkpoint(model, num_classes, T, out_dir / "model_temp_scaled.pt", hyperparameters=hparams)
-    print(f"learned T={T:.4f} -> saved model_temp_scaled.pt")
+    val_labels_dev = val_labels.to(device)
+    results = {
+        "uncalibrated": evaluate_probe(head, val_emb, val_labels, device, {"method": "none"}),
+    }
 
-    results = {"T=1.0": evaluate_probe(head, val_emb, val_labels, device, 1.0),
-               f"T={T:.4f}": evaluate_probe(head, val_emb, val_labels, device, T)}
+    T = 1.0
+    if calibration in {"temperature", "temperature_beta"}:
+        T = fit_temperature(val_logits_all, val_labels_dev)
+        temp_calibration = {"method": "temperature", "temperature": T}
+        save_checkpoint(
+            model, num_classes, T, out_dir / "model_temp_scaled.pt",
+            hyperparameters=hparams, calibration=temp_calibration,
+        )
+        print(f"learned T={T:.4f} -> saved model_temp_scaled.pt")
+        results[describe_calibration(temp_calibration)] = evaluate_probe(
+            head, val_emb, val_labels, device, temp_calibration
+        )
+
+    beta_calibration = None
+    if calibration in {"beta", "temperature_beta"}:
+        beta_source_probs = torch.softmax(val_logits_all / T, dim=1)
+        beta = fit_beta_calibration(
+            beta_source_probs, val_labels_dev, max_iter=beta_max_iter, l2=beta_l2
+        )
+        if calibration == "temperature_beta":
+            beta_calibration = {"method": "temperature_beta", "temperature": T, "beta": beta}
+            beta_path = out_dir / "model_temp_beta_calibrated.pt"
+        else:
+            beta_calibration = beta
+            beta_path = out_dir / "model_beta_calibrated.pt"
+        save_checkpoint(
+            model, num_classes, T if calibration == "temperature_beta" else 1.0, beta_path,
+            hyperparameters=hparams, calibration=beta_calibration,
+        )
+        print(f"learned {describe_calibration(beta_calibration)} -> saved {beta_path.name}")
+        results[describe_calibration(beta_calibration)] = evaluate_probe(
+            head, val_emb, val_labels, device, beta_calibration
+        )
+
     if val_domains is not None:
         for domain in ("id", "ood"):
             mask = val_domains == domain
             if mask.any():
-                results[f"T={T:.4f} / {domain}"] = evaluate_probe(
-                    head, val_emb[mask], val_labels[mask], device, T
-                )
+                domain_calibrations: list[tuple[str, dict | float | None]] = [
+                    ("uncalibrated", {"method": "none"})
+                ]
+                if calibration in {"temperature", "temperature_beta"}:
+                    temp_calibration = {"method": "temperature", "temperature": T}
+                    domain_calibrations.append((describe_calibration(temp_calibration), temp_calibration))
+                if beta_calibration is not None:
+                    domain_calibrations.append((describe_calibration(beta_calibration), beta_calibration))
+                for name, cal in domain_calibrations:
+                    results[f"{name} / {domain}"] = evaluate_probe(
+                        head, val_emb[mask], val_labels[mask], device, cal
+                    )
     print(json.dumps(results, indent=2))
     (out_dir / "val_metrics.json").write_text(json.dumps(results, indent=2))
 
@@ -215,10 +269,19 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=None,
                         help="Controls head init + minibatch order, for training multiple seeds "
                              "of the same backbone as deep-ensemble members.")
+    parser.add_argument("--calibration", type=str, default="temperature",
+                        choices=["none", "temperature", "beta", "temperature_beta"],
+                        help="Post-hoc calibration checkpoint(s) to fit on val. Default preserves "
+                             "the original temperature-scaled output.")
+    parser.add_argument("--beta-l2", type=float, default=1e-4,
+                        help="L2 penalty toward the identity beta map; helps avoid overfitting "
+                             "rare classes on small val sets.")
+    parser.add_argument("--beta-max-iter", type=int, default=200)
     args = parser.parse_args()
     train_probe(args.features_dir, args.out_dir, args.backbone, args.img_size, args.pooling,
                 args.epochs, args.lr, args.weight_decay, args.patience,
-                tuple(args.extra_train_features_dirs), args.label_smoothing, args.brier_weight, args.seed)
+                tuple(args.extra_train_features_dirs), args.label_smoothing, args.brier_weight,
+                args.seed, args.calibration, args.beta_l2, args.beta_max_iter)
 
 
 if __name__ == "__main__":
