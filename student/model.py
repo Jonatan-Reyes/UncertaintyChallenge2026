@@ -157,6 +157,7 @@ class LoRAClassifier(Classifier):
             bias="none",
         )
         self.backbone = get_peft_model(self.backbone, peft_cfg)
+        self.backbone.print_trainable_parameters()
 
     def save_pretrained(self, save_directory: str | PathLike[str]) -> None:
         self.backbone.save_pretrained(save_directory)
