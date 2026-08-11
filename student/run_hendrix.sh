@@ -5,13 +5,16 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=slurm-%j.out
 
-source activate uncertainty
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate uncertainty
 
 hostname
 echo $CUDA_VISIBLE_DEVICES
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_DIR"
+# SLURM copies this script into a spool dir before running it, so
+# ${BASH_SOURCE[0]} doesn't point at the repo — use SLURM_SUBMIT_DIR instead.
+# Assumes you submit with `sbatch student/run_hendrix.sh` from the repo root.
+cd "$SLURM_SUBMIT_DIR"
 
 python -m student.train \
     --data-root challenge_data \
