@@ -1,0 +1,5 @@
+uncertainty_data/
+uncertainty_data.zip
+results/
+__pycache__/
+*.pyc

@@ -33,6 +33,7 @@ from student.data import (
     default_eval_transform,
     default_train_transform,
 )
+from student.eval import evaluate_val_by_domain
 from student.model import DEFAULT_BACKBONE, Classifier
 
 
@@ -108,6 +109,16 @@ class Trainer:
         return value < self.best_val_metric
 
     def train_epoch(self) -> tuple[float, float]:
+        """Each ensemble member is trained on its own cross-entropy loss, not on
+        the loss of their averaged prediction — so members fit the data
+        independently instead of being pulled toward agreement. Each member's
+        loss is backpropagated immediately (gradients accumulate across the
+        K ``backward()`` calls before one ``optimizer.step()``), so only one
+        member's activations are ever in memory at once — no need to hold all
+        K forward passes (and no backbone duplication) simultaneously. With a
+        single member (no LoRA ensemble) this reduces to plain single-model
+        training.
+        """
         self.model.train()
         total_loss = 0.0
         total_correct = 0
@@ -116,17 +127,22 @@ class Trainer:
             imgs = imgs.to(self.device)
             labels = labels.to(self.device)
             self.optimizer.zero_grad()
-            logits = self.model(imgs)
-            loss = self.criterion(logits, labels)
-            loss.backward()
+            loss_sum = 0.0
+            member_logits = []
+            for logits_k in self.model.iter_member_logits(imgs):
+                loss_k = self.criterion(logits_k, labels)
+                loss_k.backward()
+                loss_sum += loss_k.item()
+                member_logits.append(logits_k.detach())
             self.optimizer.step()
-            total_loss += loss.item() * imgs.size(0)
-            total_correct += int((logits.argmax(dim=1) == labels).sum().item())
+            ensemble_logits = torch.stack(member_logits, dim=0).mean(dim=0)
+            total_loss += (loss_sum / len(member_logits)) * imgs.size(0)
+            total_correct += int((ensemble_logits.argmax(dim=1) == labels).sum().item())
             total += imgs.size(0)
         return total_loss / total, total_correct / total
 
-    def evaluate_val(self) -> dict[str, float]:
-        """Return ``{nll, accuracy, brier}`` on the val loader.
+    def evaluate_val(self) -> dict[str, dict[str, float]]:
+        """Return ``{overall, id, ood}`` each with ``{nll, accuracy, brier}``.
 
         Uses ``student.metrics`` so the numbers students see during training
         are computed the same way as the master evaluator's scoring.
@@ -143,10 +159,19 @@ class Trainer:
                 labels_chunks.append(np.asarray(labels))
         probs = np.concatenate(probs_chunks)
         labels = np.concatenate(labels_chunks)
+        domains = np.asarray(self.val_loader.dataset.domains)
+
+        def _subset(mask: np.ndarray) -> dict[str, float]:
+            return {
+                "nll": M.nll(probs[mask], labels[mask]),
+                "accuracy": M.accuracy(probs[mask], labels[mask]),
+                "brier": M.brier(probs[mask], labels[mask]),
+            }
+
         return {
-            "nll": M.nll(probs, labels),
-            "accuracy": M.accuracy(probs, labels),
-            "brier": M.brier(probs, labels),
+            "overall": _subset(np.ones(len(labels), dtype=bool)),
+            "id": _subset(domains == "id"),
+            "ood": _subset(domains == "ood"),
         }
 
     def fit(self, epochs: int) -> None:
@@ -155,11 +180,15 @@ class Trainer:
             val = self.evaluate_val()
             self.scheduler.step()
             print(
-                f"epoch {epoch:3d} | train_loss={train_loss:.4f} "
-                f"train_acc={train_acc:.4f} | val_nll={val['nll']:.4f} "
-                f"val_acc={val['accuracy']:.4f} val_brier={val['brier']:.4f}"
+                f"epoch {epoch:3d} | train_loss={train_loss:.4f} train_acc={train_acc:.4f} | "
+                f"val_nll={val['overall']['nll']:.4f} val_acc={val['overall']['accuracy']:.4f} "
+                f"val_brier={val['overall']['brier']:.4f} | "
+                f"id_acc={val['id']['accuracy']:.4f} id_nll={val['id']['nll']:.4f} "
+                f"id_brier={val['id']['brier']:.4f} | "
+                f"ood_acc={val['ood']['accuracy']:.4f} ood_nll={val['ood']['nll']:.4f} "
+                f"ood_brier={val['ood']['brier']:.4f}"
             )
-            current = val[self.early_stop_metric]
+            current = val["overall"][self.early_stop_metric]
             if self._is_improved(current):
                 self.best_val_metric = current
                 self.best_state_dict = copy.deepcopy(self.model.state_dict())
@@ -241,6 +270,10 @@ def train(
     num_workers: int = 4,
     backbone: str = DEFAULT_BACKBONE,
     pretrained: bool = False,
+    lora_r: int = 8,
+    lora_alpha: float = 16.0,
+    lora_dropout: float = 0.05,
+    num_lora_members: int = 4,
     early_stop_metric: str = "accuracy",
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -257,6 +290,10 @@ def train(
         "num_workers": int(num_workers),
         "backbone": str(backbone),
         "pretrained": bool(pretrained),
+        "lora_r": int(lora_r),
+        "lora_alpha": float(lora_alpha),
+        "lora_dropout": float(lora_dropout),
+        "num_lora_members": int(num_lora_members),
         "early_stop_metric": str(early_stop_metric),
         "data_root": str(data_root),
     }
@@ -271,6 +308,8 @@ def train(
 
     model = Classifier(
         train_ds.num_classes, backbone_name=backbone, pretrained=pretrained,
+        lora_r=lora_r, lora_alpha=lora_alpha, lora_dropout=lora_dropout,
+        num_lora_members=num_lora_members,
     ).to(device)
     optimizer = make_optimizer(model, lr_backbone=lr, lr_head=head_lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
@@ -289,6 +328,12 @@ def train(
     T = temperature_scale(model, val_loader, device)
     save_checkpoint(model, train_ds.num_classes, T, output_dir / "model_temp_scaled.pt", hyperparameters=hparams)
     print(f"learned T={T:.4f} → saved model_temp_scaled.pt")
+
+    val_metrics = evaluate_val_by_domain(
+        model, val_ds, device, T, batch_size=batch_size, num_workers=num_workers,
+    )
+    (output_dir / "val_metrics.json").write_text(json.dumps(val_metrics, indent=2))
+    print(f"wrote {output_dir / 'val_metrics.json'}")
 
 
 def main() -> None:
@@ -315,6 +360,14 @@ def main() -> None:
                         help="timm model id (e.g. resnet50, resnet18, convnext_small, vit_base_patch16_224).")
     parser.add_argument("--pretrained", action="store_true",
                         help="Initialize the backbone from timm's pretrained weights.")
+    parser.add_argument("--lora-r", type=int, default=8,
+                        help="LoRA rank for backbone adapters; 0 disables LoRA (full backbone fine-tuning).")
+    parser.add_argument("--lora-alpha", type=float, default=16.0,
+                        help="LoRA scaling factor (applied update is scaled by alpha/r).")
+    parser.add_argument("--lora-dropout", type=float, default=0.05,
+                        help="Dropout applied inside the LoRA adapters.")
+    parser.add_argument("--num-lora-members", type=int, default=4,
+                        help="Ensemble size: number of independent LoRA adapters (each with its own head).")
     args = parser.parse_args()
     train(**vars(args))
 

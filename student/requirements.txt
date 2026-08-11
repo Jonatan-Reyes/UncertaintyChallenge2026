@@ -1,6 +1,7 @@
 torch
 torchvision
 timm
+peft
 pandas
 numpy
 pillow
