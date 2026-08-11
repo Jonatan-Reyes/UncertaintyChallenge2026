@@ -454,12 +454,18 @@ def fit_expert(
         model = DDP(model, device_ids=[_LOCAL_RANK])
     params = [p for p in model.parameters() if p.requires_grad]
     optimizer = optim.AdamW(params, lr=cfg.lr, weight_decay=cfg.weight_decay)
-    warmup_epochs = cfg.warmup_epochs if cfg.warmup_epochs > 0 else max(1, cfg.epochs // 10)
+    if cfg.warmup_epochs is None:
+        warmup_epochs = max(1, cfg.epochs // 10)
+    else:
+        warmup_epochs = max(0, int(cfg.warmup_epochs))
     cosine = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=cfg.epochs)
-    warmup = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=warmup_epochs)
-    scheduler = optim.lr_scheduler.SequentialLR(
-        optimizer, [warmup, cosine], milestones=[warmup_epochs]
-    )
+    if warmup_epochs > 0:
+        warmup = optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=warmup_epochs)
+        scheduler = optim.lr_scheduler.SequentialLR(
+            optimizer, [warmup, cosine], milestones=[warmup_epochs]
+        )
+    else:
+        scheduler = cosine
     criterion = nn.CrossEntropyLoss(label_smoothing=cfg.label_smoothing)
 
     n_train = len(tr_ds)
@@ -684,8 +690,8 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=15)
     parser.add_argument("--batch-size", type=int, default=32,
                         help="batch size per rank (global = batch_size x world_size)")
-    parser.add_argument("--warmup-epochs", type=int, default=0,
-                        help="LR warmup epochs (default: max(1, epochs // 10))")
+    parser.add_argument("--warmup-epochs", type=int, default=None,
+                        help="LR warmup epochs (default: max(1, epochs // 10)); 0 disables warmup")
     parser.add_argument("--amp-bf16", action="store_true",
                         help="wrap forward passes in bf16 autocast (H100/Ampere+)")
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -727,7 +733,10 @@ def main() -> None:
     if _DIST:
         torch.distributed.barrier()
 
-    warmup_epochs = args.warmup_epochs if args.warmup_epochs > 0 else max(1, args.epochs // 10)
+    if args.warmup_epochs is None:
+        warmup_epochs = max(1, args.epochs // 10)
+    else:
+        warmup_epochs = max(0, int(args.warmup_epochs))
     hyper = {
         "n_experts": int(args.n_experts),
         "backbone": args.backbone,

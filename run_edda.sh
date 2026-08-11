@@ -4,8 +4,8 @@
 #   DINOv3-base (frozen) + LoRA on the last block + linear head
 #   native resolution + per-batch width padding (DistributedWidthBucketSampler)
 #   bf16 autocast, 5 experts x 30 epochs
-#   resolution ramp 75% -> 50% -> 25% (2 epochs each, inside the LR warmup)
-#   per-rank batch 96 (global 192), lr 2e-4, warmup 3, cosine, patience 6
+#   resolution ramp 75% -> 50% -> 25% (2 epochs each), then full res
+#   per-rank batch 96 (global 192), lr 2e-4, cosine (no warmup), patience 6
 #
 # Two legs (both DDP, 2xH100):
 #   A  non-cluster: 5 experts on leave-one-out train subsets, no gate
@@ -80,7 +80,7 @@ N_EXPERTS="${N_EXPERTS:-5}"
 EPOCHS="${EPOCHS:-30}"
 BATCH="${BATCH:-96}"     # per rank; global = 2 x 96 = 192
 LR="${LR:-2e-4}"
-WARMUP="${WARMUP:-3}"
+WARMUP="${WARMUP:-0}"
 WORKERS="${WORKERS:-8}"
 PATIENCE="${PATIENCE:-6}"
 N_CLUSTERS="${N_CLUSTERS:-5}"
