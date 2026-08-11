@@ -388,11 +388,19 @@ def fit_expert(
 ) -> nn.Module:
     torch.manual_seed(seed + _RANK)
     np.random.seed(seed + _RANK)
-    if train_idx is None and getattr(cfg, "expert_data_frac", 1.0) < 1.0:
-        frac = float(cfg.expert_data_frac)
-        n = max(1, int(len(train_ds) * frac))
-        rng = np.random.RandomState(seed)
-        train_idx = np.sort(rng.choice(len(train_ds), size=n, replace=False))
+    if train_idx is None and int(cfg.n_experts) > 1:
+        n_exp = int(cfg.n_experts)
+        hold = seed - int(getattr(cfg, "base_seed", 0))
+        if not (0 <= hold < n_exp):
+            hold = seed % n_exp
+        n = len(train_ds)
+        rng = np.random.RandomState(int(getattr(cfg, "base_seed", 0)))
+        perm = rng.permutation(n)
+        sizes = np.full(n_exp, n // n_exp)
+        sizes[: n % n_exp] += 1
+        edges = np.concatenate([[0], np.cumsum(sizes)])
+        folds = [perm[edges[k] : edges[k + 1]] for k in range(n_exp)]
+        train_idx = np.sort(np.concatenate([f for k, f in enumerate(folds) if k != hold]))
     tr_ds = Subset(train_ds, train_idx) if train_idx is not None else train_ds
     vl_ds = Subset(val_ds, val_idx) if val_idx is not None else val_ds
     if _DIST and cfg.native:
@@ -665,9 +673,6 @@ def main() -> None:
                         help="UMAP output dims for model-embedding clustering/gating")
     parser.add_argument("--lora-last-layers", type=int, default=0,
                         help="LoRA only the last N transformer blocks (0 = all blocks)")
-    parser.add_argument("--expert-data-frac", type=float, default=0.8,
-                        help="fraction of the train set each full-data expert trains on "
-                             "(1.0 = all data; subsets drawn deterministically per expert seed)")
     parser.add_argument("--cluster-mode", type=str, choices=["off", "on"], default="off",
                         help="'on' = per-cluster hold-out training sets from model-embedding UMAP clustering + gating")
     parser.add_argument("--no-gate", action="store_true",
@@ -706,7 +711,6 @@ def main() -> None:
         "patience": int(args.patience),
         "base_seed": int(args.base_seed),
         "lora_last_layers": int(args.lora_last_layers),
-        "expert_data_frac": float(args.expert_data_frac),
         "cluster_mode": str(args.cluster_mode),
         "full_image": bool(args.full_image),
         "native": bool(args.native),
