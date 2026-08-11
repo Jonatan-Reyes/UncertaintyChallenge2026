@@ -32,6 +32,7 @@ from student.data import (
     IWildCamChallengeDataset,
     default_eval_transform,
     default_train_transform,
+    get_num_classes,
 )
 from student.model import DEFAULT_BACKBONE, Classifier, LoRAClassifier
 
@@ -112,7 +113,16 @@ class Trainer:
         total_loss = 0.0
         total_correct = 0
         total = 0
+        expected_hw = getattr(self.model, "input_size", None)
         for imgs, labels in tqdm(self.train_loader, desc="train", leave=False):
+            if expected_hw is not None:
+                h, w = int(imgs.shape[-2]), int(imgs.shape[-1])
+                if (h, w) != tuple(expected_hw):
+                    raise ValueError(
+                        "Input batch size mismatch: got "
+                        f"{(h, w)} but backbone expects {tuple(expected_hw)}. "
+                        "Use backbone-aware transforms in student.data."
+                    )
             imgs = imgs.to(self.device)
             labels = labels.to(self.device)
             self.optimizer.zero_grad()
@@ -267,6 +277,8 @@ def train(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    num_classes = get_num_classes(data_root)
+
     hparams = {
         "epochs": int(epochs),
         "batch_size": int(batch_size),
@@ -288,16 +300,9 @@ def train(
     }
     (output_dir / "config.json").write_text(json.dumps(hparams, indent=2))
 
-    train_ds = IWildCamChallengeDataset(data_root, "train", default_train_transform())
-    val_ds = IWildCamChallengeDataset(data_root, "val", default_eval_transform())
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
-                              num_workers=num_workers, drop_last=False)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
-                            num_workers=num_workers)
-
     if use_lora:
         model = LoRAClassifier(
-            train_ds.num_classes,
+            num_classes,
             backbone_name=backbone,
             pretrained=pretrained,
             lora_r=lora_r,
@@ -308,10 +313,28 @@ def train(
         ).to(device)
     else:
         model = Classifier(
-            train_ds.num_classes,
+            num_classes,
             backbone_name=backbone,
             pretrained=pretrained,
         ).to(device)
+
+    expected_hw = model.input_size if model.input_size is not None else (224, 224)
+    print(f"backbone={backbone} expected_input_size={expected_hw}")
+
+    train_ds = IWildCamChallengeDataset(data_root, "train", default_train_transform(expected_hw))
+    val_ds = IWildCamChallengeDataset(data_root, "val", default_eval_transform(expected_hw))
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
+                              num_workers=num_workers, drop_last=False)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
+                            num_workers=num_workers)
+
+    sample_img, _ = train_ds[0]
+    sample_hw = tuple(sample_img.shape[-2:])
+    if sample_hw != tuple(expected_hw):
+        raise ValueError(
+            "Transform/model mismatch before training: got sample size "
+            f"{sample_hw}, expected {tuple(expected_hw)}"
+        )
     optimizer = make_optimizer(model, lr_backbone=lr, lr_head=head_lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     criterion = nn.CrossEntropyLoss()
@@ -324,18 +347,18 @@ def train(
     trainer.fit(epochs)
 
     if use_lora:
-        save_checkpoint(model, train_ds.num_classes, 1.0, output_dir / "model_lora", hyperparameters=hparams)
+        save_checkpoint(model, num_classes, 1.0, output_dir / "model_lora", hyperparameters=hparams)
         print("saved model_lora/")
     else:
-        save_checkpoint(model, train_ds.num_classes, 1.0, output_dir / "model.pt", hyperparameters=hparams)
+        save_checkpoint(model, num_classes, 1.0, output_dir / "model.pt", hyperparameters=hparams)
         print("saved model.pt")
 
     T = temperature_scale(model, val_loader, device)
     if use_lora:
-        save_checkpoint(model, train_ds.num_classes, T, output_dir / "model_temp_scaled_lora", hyperparameters=hparams)
+        save_checkpoint(model, num_classes, T, output_dir / "model_temp_scaled_lora", hyperparameters=hparams)
         print(f"learned T={T:.4f} -> saved model_temp_scaled_lora/")
     else:
-        save_checkpoint(model, train_ds.num_classes, T, output_dir / "model_temp_scaled.pt", hyperparameters=hparams)
+        save_checkpoint(model, num_classes, T, output_dir / "model_temp_scaled.pt", hyperparameters=hparams)
         print(f"learned T={T:.4f} -> saved model_temp_scaled.pt")
 
 

@@ -64,11 +64,13 @@ def predict(
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, T = load_checkpoint(checkpoint, device)
+    expected_hw = model.input_size if getattr(model, "input_size", None) is not None else (224, 224)
+    print(f"backbone={model.backbone_name} expected_input_size={expected_hw}")
 
     all_uids: list[str] = []
     all_probs: list[np.ndarray] = []
     for split in splits:
-        ds = IWildCamChallengeDataset(data_root, split, default_eval_transform())
+        ds = IWildCamChallengeDataset(data_root, split, default_eval_transform(expected_hw))
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
         uids, probs = collect_test_predictions(model, loader, device, temperature=T)
         all_uids.extend(uids)

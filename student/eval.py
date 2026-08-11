@@ -96,7 +96,9 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, temperature = load_checkpoint(args.checkpoint, device)
-    val_ds = IWildCamChallengeDataset(args.data_root, "val", default_eval_transform())
+    expected_hw = model.input_size if getattr(model, "input_size", None) is not None else (224, 224)
+    print(f"backbone={model.backbone_name} expected_input_size={expected_hw}")
+    val_ds = IWildCamChallengeDataset(args.data_root, "val", default_eval_transform(expected_hw))
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False,
                             num_workers=args.num_workers)
     metrics = evaluate(model, val_loader, device, temperature)

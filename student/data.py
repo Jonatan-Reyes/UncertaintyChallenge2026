@@ -31,6 +31,26 @@ IMAGENET_STD = (0.229, 0.224, 0.225)
 ALLOWED_SPLITS = {"train", "val", "test_public", "test_private"}
 
 
+def get_num_classes(root) -> int:
+    """Read class count from ``class_mapping.json`` without constructing a dataset."""
+    root = Path(root)
+    with (root / "class_mapping.json").open() as f:
+        return int(json.load(f)["num_classes"])
+
+
+def _normalize_img_size(img_size: int | tuple[int, int]) -> tuple[int, int]:
+    if isinstance(img_size, int):
+        if img_size <= 0:
+            raise ValueError(f"img_size must be > 0, got {img_size}")
+        return (img_size, img_size)
+    if len(img_size) != 2:
+        raise ValueError(f"img_size tuple must have length 2, got {img_size}")
+    h, w = int(img_size[0]), int(img_size[1])
+    if h <= 0 or w <= 0:
+        raise ValueError(f"img_size values must be > 0, got {img_size}")
+    return (h, w)
+
+
 class IWildCamChallengeDataset(Dataset):
     """One row per image. Returns ``(image_tensor, label_int)`` for train/val,
     ``(image_tensor, uid_str)`` for test_public (which has no labels).
@@ -85,30 +105,35 @@ class IWildCamChallengeDataset(Dataset):
         return img, int(self.labels[idx])
 
 
-def default_train_transform() -> Callable:
+def default_train_transform(img_size: int | tuple[int, int] = IMG_SIZE) -> Callable:
+    resize_hw = _normalize_img_size(img_size)
     return transforms.Compose([
-        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.Resize(resize_hw),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
 
 
-def default_eval_transform() -> Callable:
+def default_eval_transform(img_size: int | tuple[int, int] = IMG_SIZE) -> Callable:
+    resize_hw = _normalize_img_size(img_size)
     return transforms.Compose([
-        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.Resize(resize_hw),
         transforms.ToTensor(),
         transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
 
 
 def get_dataloaders(
-    root, batch_size: int = 32, num_workers: int = 4
+    root,
+    batch_size: int = 32,
+    num_workers: int = 4,
+    img_size: int | tuple[int, int] = IMG_SIZE,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     """Return ``(train_loader, val_loader, test_loader)`` with sensible defaults."""
-    train_ds = IWildCamChallengeDataset(root, "train", default_train_transform())
-    val_ds = IWildCamChallengeDataset(root, "val", default_eval_transform())
-    test_ds = IWildCamChallengeDataset(root, "test_public", default_eval_transform())
+    train_ds = IWildCamChallengeDataset(root, "train", default_train_transform(img_size))
+    val_ds = IWildCamChallengeDataset(root, "val", default_eval_transform(img_size))
+    test_ds = IWildCamChallengeDataset(root, "test_public", default_eval_transform(img_size))
     return (
         DataLoader(train_ds, batch_size=batch_size, shuffle=True,
                    num_workers=num_workers, drop_last=False),

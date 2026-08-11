@@ -35,6 +35,49 @@ except ImportError:  # pragma: no cover - only needed when LoRA is enabled
 DEFAULT_BACKBONE = "convnext_tiny"
 
 
+def _normalize_hw(size: object) -> tuple[int, int] | None:
+    """Convert common timm img-size metadata into ``(H, W)``."""
+    if isinstance(size, int):
+        if size > 0:
+            return (int(size), int(size))
+        return None
+    if isinstance(size, (tuple, list)):
+        if len(size) == 2:
+            h, w = int(size[0]), int(size[1])
+            if h > 0 and w > 0:
+                return (h, w)
+        if len(size) == 3:
+            h, w = int(size[-2]), int(size[-1])
+            if h > 0 and w > 0:
+                return (h, w)
+    return None
+
+
+def infer_backbone_input_size(backbone: nn.Module) -> tuple[int, int] | None:
+    """Best-effort ``(H, W)`` expected by ``backbone``.
+
+    timm models expose this either as ``img_size`` or in
+    ``default_cfg/pretrained_cfg['input_size']``.
+    """
+    hw = _normalize_hw(getattr(backbone, "img_size", None))
+    if hw is not None:
+        return hw
+
+    default_cfg = getattr(backbone, "default_cfg", None)
+    if isinstance(default_cfg, dict):
+        hw = _normalize_hw(default_cfg.get("input_size"))
+        if hw is not None:
+            return hw
+
+    pretrained_cfg = getattr(backbone, "pretrained_cfg", None)
+    if isinstance(pretrained_cfg, dict):
+        hw = _normalize_hw(pretrained_cfg.get("input_size"))
+        if hw is not None:
+            return hw
+
+    return None
+
+
 class Classifier(nn.Module):
     """timm backbone (as feature extractor) + linear classifier head.
 
@@ -60,6 +103,7 @@ class Classifier(nn.Module):
         self.backbone_name = backbone_name
         self.embed_dim = int(self.backbone.num_features)
         self.num_classes = int(num_classes)
+        self.input_size = infer_backbone_input_size(self.backbone)
         self.head = nn.Linear(self.embed_dim, self.num_classes)
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
