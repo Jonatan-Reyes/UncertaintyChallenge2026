@@ -4,6 +4,22 @@
   - Please write down your name and what you are currently trying to do and how is it working.
   - Everytime you try something different, comment it verbally and see if someone else has tried that before.
 
+# Current best sinble backbone probe model
+python -m student.train_probe \
+  --features-dir features/dinov2_vitg14_reg4_518 \
+  --backbone vit_giant_patch14_reg4_dinov2 \
+  --img-size 518 --pooling cls \
+  --brier-weight 0.5 \
+  --epochs 200 --lr 1e-3 --weight-decay 1e-4 --patience 20 \
+  --out-dir runs/dinov2_vitg14_518_loss_bw05
+
+  Extract features from the backbone using the following command:
+  python -m student.extract_features \
+  --data-root challenge_data \
+  --backbone vit_giant_patch14_reg4_dinov2 \
+  --img-size 518 \
+  --out-dir features/dinov2_vitg14_reg4_518 \
+  --batch-size 128 --num-workers 8 --gpu 0
 
 # Summer School Challenge 2026 — Predictive Uncertainty on iWildCam
 Welcome to the Predictive Uncertainty Challenge 2026, where deep learning meets the wild… and occasionally gets very unsure about what it just saw.
