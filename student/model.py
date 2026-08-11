@@ -114,4 +114,15 @@ class Classifier(nn.Module):
         return torch.stack(list(self.iter_member_logits(x)), dim=0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.forward_members(x).mean(dim=0)
+        """Log of the probability-space ensemble average, shape ``(N, num_classes)``.
+
+        Averaging each member's softmax (rather than its raw logits) is the
+        standard deep-ensemble combination rule and calibrates better. Returning
+        ``log(mean_k softmax(logits_k))`` keeps the ``forward(x) -> logits``
+        contract intact: since the averaged probabilities already sum to 1,
+        ``softmax(forward(x))`` downstream reproduces them exactly, so
+        temperature scaling, ``CrossEntropyLoss``, etc. all still work unchanged.
+        """
+        member_probs = torch.softmax(self.forward_members(x), dim=-1)
+        mean_probs = member_probs.mean(dim=0)
+        return torch.log(mean_probs.clamp_min(1e-12))

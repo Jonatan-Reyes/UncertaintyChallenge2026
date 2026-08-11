@@ -14,7 +14,7 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
 python -m student.train \
-    --data-root uncertainty_data/challenge_data \
+    --data-root challenge_data \
     --output-dir results \
     --pretrained \
     --backbone vit_small_patch16_dinov3.lvd1689m \

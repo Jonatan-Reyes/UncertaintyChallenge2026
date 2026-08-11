@@ -1,5 +1,6 @@
 uncertainty_data/
 uncertainty_data.zip
+challenge_data/
 results/
 __pycache__/
 *.pyc

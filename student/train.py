@@ -331,6 +331,7 @@ def train(
 
     val_metrics = evaluate_val_by_domain(
         model, val_ds, device, T, batch_size=batch_size, num_workers=num_workers,
+        output_dir=output_dir,
     )
     (output_dir / "val_metrics.json").write_text(json.dumps(val_metrics, indent=2))
     print(f"wrote {output_dir / 'val_metrics.json'}")

@@ -27,6 +27,7 @@ from torch.utils.data import DataLoader
 from student.data import IWildCamChallengeDataset, default_eval_transform
 from student.metrics import compute_all_metrics
 from student.model import DEFAULT_BACKBONE, Classifier
+from student.plotting import plot_reliability_diagram
 
 
 def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
@@ -72,10 +73,20 @@ def evaluate(
 def evaluate_val_by_domain(
     model: nn.Module, val_ds: IWildCamChallengeDataset, device,
     temperature: float = 1.0, batch_size: int = 32, num_workers: int = 4,
+    output_dir: Path | None = None,
 ) -> dict:
-    """Evaluate the val split as a whole, plus split by domain (id vs. ood)."""
+    """Evaluate the val split as a whole, plus split by domain (id vs. ood).
+
+    If ``output_dir`` is given, also saves a reliability diagram (over the
+    full val split) to ``output_dir / "reliability_diagram.png"``.
+    """
     loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     probs, labels = collect_predictions(model, loader, device, temperature)
+
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        plot_reliability_diagram(probs, labels, output_dir / "reliability_diagram.png")
 
     domains = np.asarray(val_ds.domains)
     id_mask = domains == "id"
@@ -105,6 +116,7 @@ def main() -> None:
     metrics = evaluate_val_by_domain(
         model, val_ds, device, temperature,
         batch_size=args.batch_size, num_workers=args.num_workers,
+        output_dir=args.output_dir,
     )
     print(json.dumps(metrics, indent=2))
 
