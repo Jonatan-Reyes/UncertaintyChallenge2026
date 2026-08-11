@@ -387,6 +387,8 @@ def main() -> None:
                         help="timm model id (e.g. resnet50, resnet18, convnext_small, vit_base_patch16_224).")
     parser.add_argument("--pretrained", action="store_true",
                         help="Initialize the backbone from timm's pretrained weights.")
+    parser.add_argument("--device-idx", type=int, default=None,
+                        help="CUDA device index to use (default: None, which uses the first available device). ")
     parser.add_argument("--use-lora", action="store_true",
                         help="Use LoRAClassifier instead of the base Classifier.")
     parser.add_argument("--lora-r", type=int, default=8,
