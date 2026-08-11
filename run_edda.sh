@@ -57,6 +57,16 @@ OUT="${OUT:-$RUNS/ensemble_dinov3_raw_native_edda_h100}"
     echo "  export DATA=/path/to/challenge_data"
     exit 1
 }
+# The prepared challenge_data layout (student/data.py):
+#   challenge_data/{train,val}/images + labels.csv, test_public/images, class_mapping.json
+for p in class_mapping.json train/images val/images test_public/images; do
+    [ -e "$DATA/$p" ] || {
+        echo "ERROR: expected '$DATA/$p' but it's missing."
+        echo "  Data layout not prepared. Rsync the prepared challenge_data from the dev box:"
+        echo "  rsync -av /home/alice/work/dtu_ss_26/challenge_data/ aliceschiavone@edda:/staff/aliceschiavone/ss26/challenge_data/"
+        exit 1
+    }
+done
 
 N_EXPERTS="${N_EXPERTS:-5}"
 EPOCHS="${EPOCHS:-20}"
