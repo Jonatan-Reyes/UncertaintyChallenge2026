@@ -1,0 +1,15 @@
+# Requirements for the edda 2xH100 DDP run (conda env `ss226`).
+# PyTorch is pulled from the CUDA 13.0 index so the cu130 builds are used.
+--extra-index-url https://download.pytorch.org/whl/cu130
+
+torch==2.13.0+cu130
+torchvision==0.28.0+cu130
+timm==1.0.28
+peft==0.20.0
+umap-learn==0.5.12
+scikit-learn==1.9.0
+scipy==1.17.1
+pandas==3.0.5
+pillow==12.3.0
+tqdm==4.70.0
+numpy==2.4.6
