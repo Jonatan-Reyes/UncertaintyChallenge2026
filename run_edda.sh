@@ -19,26 +19,35 @@
 # Output: $OUT/experts/ (expert_seed0-4.pt), $OUT/metrics_val.json, $OUT/submission.csv
 set -euo pipefail
 cd "$(dirname "$0")"
-PROJECT_ROOT="/users/aliceschiavone/ss26/"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# Never let ~/.local pip packages (e.g. an unrelated torch) shadow the env's.
+export PYTHONNOUSERSITE=1
 
 # Resolve python/torchrun from the active conda env (or PY/TORCHRUN overrides).
-if [ -z "${PY:-}" ] && [ -n "${CONDA_PREFIX:-}" ] && [ -x "$CONDA_PREFIX/bin/python" ]; then
-    PY="$CONDA_PREFIX/bin/python"
-fi
+# When a conda env is active, we REQUIRE torch from it -- no falling back to
+# `command -v`, which can pick up a stale user-site torchrun.
 if [ -z "${PY:-}" ]; then
-    PY="$(command -v python)"
-fi
-if [ -z "${TORCHRUN:-}" ] && [ -n "${CONDA_PREFIX:-}" ] && [ -x "$CONDA_PREFIX/bin/torchrun" ]; then
-    TORCHRUN="$CONDA_PREFIX/bin/torchrun"
+    PY="${CONDA_PREFIX:+"$CONDA_PREFIX/bin/python"}"
+    [ -z "$PY" ] && PY="$(command -v python)"
 fi
 if [ -z "${TORCHRUN:-}" ]; then
-    TORCHRUN="$(command -v torchrun)"
+    TORCHRUN="${CONDA_PREFIX:+"$CONDA_PREFIX/bin/torchrun"}"
+    [ -z "$TORCHRUN" ] && TORCHRUN="$(command -v torchrun)"
 fi
-if [ -z "${PY:-}" ] || [ ! -x "${PY:-}" ]; then
-    echo "ERROR: could not find a python in the active conda env. Activate it, e.g."
+[ -x "$PY" ] || {
+    echo "ERROR: python not found ($PY). Activate your conda env, e.g."
     echo "  conda activate ss26"
     exit 1
-fi
+}
+[ -x "$TORCHRUN" ] || {
+    echo "ERROR: torchrun not found in the active env ($CONDA_PREFIX)."
+    echo "  Install torch into it, e.g."
+    echo "  pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/cu130"
+    exit 1
+}
+echo ">>> using python:    $PY"
+echo ">>> using torchrun:  $TORCHRUN"
 RUNS="${RUNS:-$PROJECT_ROOT/runs}"
 DATA="${DATA:-$PROJECT_ROOT/challenge_data}"
 OUT="${OUT:-$RUNS/ensemble_dinov3_raw_native_edda_h100}"
