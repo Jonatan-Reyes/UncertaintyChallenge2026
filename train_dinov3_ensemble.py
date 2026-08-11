@@ -388,6 +388,11 @@ def fit_expert(
 ) -> nn.Module:
     torch.manual_seed(seed + _RANK)
     np.random.seed(seed + _RANK)
+    if train_idx is None and getattr(cfg, "expert_data_frac", 1.0) < 1.0:
+        frac = float(cfg.expert_data_frac)
+        n = max(1, int(len(train_ds) * frac))
+        rng = np.random.RandomState(seed)
+        train_idx = np.sort(rng.choice(len(train_ds), size=n, replace=False))
     tr_ds = Subset(train_ds, train_idx) if train_idx is not None else train_ds
     vl_ds = Subset(val_ds, val_idx) if val_idx is not None else val_ds
     if _DIST and cfg.native:
@@ -426,7 +431,10 @@ def fit_expert(
     )
     criterion = nn.CrossEntropyLoss(label_smoothing=cfg.label_smoothing)
 
-    print(f"\n=== expert seed {seed}: {sum(p.numel() for p in params):,} trainable params ===")
+    n_train = len(tr_ds)
+    n_val = len(vl_ds)
+    print(f"\n=== expert seed {seed}: {sum(p.numel() for p in params):,} trainable params | "
+          f"train {n_train} ({n_train / len(train_ds):.1%} of full) | val {n_val} ===")
     best_nll, best_state, no_improve = float("inf"), None, 0
     for epoch in range(1, cfg.epochs + 1):
         if _DIST:
@@ -657,6 +665,9 @@ def main() -> None:
                         help="UMAP output dims for model-embedding clustering/gating")
     parser.add_argument("--lora-last-layers", type=int, default=0,
                         help="LoRA only the last N transformer blocks (0 = all blocks)")
+    parser.add_argument("--expert-data-frac", type=float, default=0.8,
+                        help="fraction of the train set each full-data expert trains on "
+                             "(1.0 = all data; subsets drawn deterministically per expert seed)")
     parser.add_argument("--cluster-mode", type=str, choices=["off", "on"], default="off",
                         help="'on' = per-cluster hold-out training sets from model-embedding UMAP clustering + gating")
     parser.add_argument("--no-gate", action="store_true",
@@ -695,6 +706,7 @@ def main() -> None:
         "patience": int(args.patience),
         "base_seed": int(args.base_seed),
         "lora_last_layers": int(args.lora_last_layers),
+        "expert_data_frac": float(args.expert_data_frac),
         "cluster_mode": str(args.cluster_mode),
         "full_image": bool(args.full_image),
         "native": bool(args.native),

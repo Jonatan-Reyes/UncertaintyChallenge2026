@@ -86,6 +86,7 @@ export PYTHONUNBUFFERED=1
   --output-dir "$OUT" \
   --native --amp-bf16 \
   --lora-last-layers 1 \
+  --expert-data-frac 0.8 \
   --n-experts "$N_EXPERTS" \
   --epochs "$EPOCHS" \
   --batch-size "$BATCH" \
