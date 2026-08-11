@@ -19,7 +19,7 @@
 # Output: $OUT/experts/ (expert_seed0-4.pt), $OUT/metrics_val.json, $OUT/submission.csv
 set -euo pipefail
 cd "$(dirname "$0")"
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Never let ~/.local pip packages (e.g. an unrelated torch) shadow the env's.
 export PYTHONNOUSERSITE=1
