@@ -29,6 +29,8 @@ Native full-image mode (--native):
     a width-bucketed sampler keeps within-batch resolution variance low so little
     is wasted. Intensity augmentation (``INTENSITY_JITTER``) is biased toward
     contrast/brightness since ~95% of images are effectively grayscale.
+    ``--ramp-scales`` downscales the first epochs (``--ramp-epochs`` each) for a
+    cheap warm-up before switching to full resolution.
 
 DDP + bf16:
     Launched via ``torchrun --nproc_per_node=2`` (RANK/WORLD_SIZE/LOCAL_RANK env
@@ -176,17 +178,28 @@ def train_transform(size: int = IMG_SIZE, full_image: bool = False) -> transform
     return transforms.Compose(ops)
 
 
-def native_train_transform() -> transforms.Compose:
-    """Full-image training at native resolution (no resize, no crop)."""
-    return transforms.Compose(
-        [
-            transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(**INTENSITY_JITTER),
-            transforms.RandAugment(num_ops=2, magnitude=9),
-            transforms.ToTensor(),
-            transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-        ]
-    )
+def native_train_transform(scale: float = 1.0) -> transforms.Compose:
+    """Full-image training at native resolution (no resize, no crop).
+
+    ``scale < 1`` downscales every image by that factor (aspect-preserving);
+    used by the resolution ramp so early epochs train on cheap low-res views.
+    """
+    ops = []
+    if scale < 1.0:
+        def _downscale(im):
+            return im.resize(
+                (max(1, round(im.width * scale)), max(1, round(im.height * scale)))
+            )
+
+        ops.append(transforms.Lambda(_downscale))
+    ops += [
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(**INTENSITY_JITTER),
+        transforms.RandAugment(num_ops=2, magnitude=9),
+        transforms.ToTensor(),
+        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+    ]
+    return transforms.Compose(ops)
 
 
 def eval_transform(size: int = IMG_SIZE) -> transforms.Compose:
@@ -422,6 +435,16 @@ def fit_expert(
         num_workers=0, collate_fn=dynamic_pad_collate if cfg.native else None,
     )
 
+    tr_base = tr_ds.dataset if isinstance(tr_ds, Subset) else tr_ds
+    ramp_scales = [float(s) for s in getattr(cfg, "ramp_scales", [])] if cfg.native else []
+    ramp_scales = [s for s in ramp_scales if 0.0 < s < 1.0]
+    ramp_epochs = max(1, int(getattr(cfg, "ramp_epochs", 1)))
+    if ramp_scales:
+        _ramp_tf = {round(s, 6): native_train_transform(s) for s in ramp_scales}
+        _ramp_tf[1.0] = native_train_transform(1.0)
+    else:
+        _ramp_tf = None
+
     model = DinoV3LoraExpert(
         train_ds.num_classes, backbone_id=cfg.backbone,
         lora_r=cfg.lora_r, lora_alpha=cfg.lora_alpha, lora_dropout=cfg.lora_dropout,
@@ -445,6 +468,10 @@ def fit_expert(
           f"train {n_train} ({n_train / len(train_ds):.1%} of full) | val {n_val} ===")
     best_nll, best_state, no_improve = float("inf"), None, 0
     for epoch in range(1, cfg.epochs + 1):
+        if _ramp_tf is not None:
+            step = (epoch - 1) // ramp_epochs
+            scale = ramp_scales[step] if step < len(ramp_scales) else 1.0
+            tr_base.transform = _ramp_tf[round(scale, 6)]
         if _DIST:
             train_sampler.set_epoch(epoch)
         train_loss = train_epoch(model, train_loader, criterion, optimizer, device,
@@ -673,6 +700,12 @@ def main() -> None:
                         help="UMAP output dims for model-embedding clustering/gating")
     parser.add_argument("--lora-last-layers", type=int, default=0,
                         help="LoRA only the last N transformer blocks (0 = all blocks)")
+    parser.add_argument("--ramp-scales", nargs="+", type=float, default=[0.75, 0.5, 0.25],
+                        help="resolution ramp (native mode): the first epochs train at each of "
+                             "these downscale factors before switching to full res "
+                             "(e.g. 0.75 0.5 0.25); 1.0 or empty disables")
+    parser.add_argument("--ramp-epochs", type=int, default=1,
+                        help="epochs spent at each --ramp-scales step")
     parser.add_argument("--cluster-mode", type=str, choices=["off", "on"], default="off",
                         help="'on' = per-cluster hold-out training sets from model-embedding UMAP clustering + gating")
     parser.add_argument("--no-gate", action="store_true",
@@ -711,6 +744,8 @@ def main() -> None:
         "patience": int(args.patience),
         "base_seed": int(args.base_seed),
         "lora_last_layers": int(args.lora_last_layers),
+        "ramp_scales": [float(s) for s in args.ramp_scales],
+        "ramp_epochs": int(args.ramp_epochs),
         "cluster_mode": str(args.cluster_mode),
         "full_image": bool(args.full_image),
         "native": bool(args.native),

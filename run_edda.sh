@@ -1,22 +1,30 @@
 #!/usr/bin/env bash
-# 2xH100 DDP run of the native full-image DINOv3+LoRA deep ensemble.
+# 2xH100 DDP runs of the native full-image DINOv3+LoRA deep ensemble.
 #
 #   DINOv3-base (frozen) + LoRA on the last block + linear head
 #   native resolution + per-batch width padding (DistributedWidthBucketSampler)
-#   bf16 autocast, 5 experts x 20 epochs
-#   per-rank batch 96 (global 192), lr 2e-4, warmup 3 epochs, cosine, patience 6
+#   bf16 autocast, 5 experts x 30 epochs
+#   resolution ramp 75% -> 50% -> 25% (2 epochs each, inside the LR warmup)
+#   per-rank batch 96 (global 192), lr 2e-4, warmup 3, cosine, patience 6
+#
+# Two legs (both DDP, 2xH100):
+#   A  non-cluster: 5 experts on leave-one-out train subsets, no gate
+#   B  cluster:     stage-1 embedders + 5 cluster experts (UMAP on val + KMeans),
+#                   combined via plain/temp-scaled/gated selection on val
 #
 # Node prerequisites:
 #   1. a conda env activated (torch cu12x, timm, peft, umap-learn, ...); the
 #      script uses $CONDA_PREFIX/bin/python and .../bin/torchrun automatically
-#   2. raw challenge_data/ present at $DATA (rsync from the dev box; runs/ not needed)
+#   2. prepared challenge_data/ at $DATA (rsync from the dev box; runs/ not needed)
 #   3. two GPUs visible:  python -c "import torch; print(torch.cuda.device_count())" == 2
 #
 # Run inside tmux:
 #   tmux new-session -s edda "bash run_edda.sh"     # detach: Ctrl-b d
 #   tmux attach -t edda                             # re-attach
 #
-# Output: $OUT/experts/ (expert_seed0-4.pt), $OUT/metrics_val.json, $OUT/submission.csv
+# Output:
+#   $OUT_NORMAL/experts/ (expert_seed0-4.pt), metrics_val.json, submission.csv
+#   $OUT_CLUSTER/experts/, metrics_val.json, submission.csv
 set -euo pipefail
 cd "$(dirname "$0")"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -69,35 +77,55 @@ for p in class_mapping.json train/images val/images test_public/images; do
 done
 
 N_EXPERTS="${N_EXPERTS:-5}"
-EPOCHS="${EPOCHS:-20}"
+EPOCHS="${EPOCHS:-30}"
 BATCH="${BATCH:-96}"     # per rank; global = 2 x 96 = 192
 LR="${LR:-2e-4}"
 WARMUP="${WARMUP:-3}"
 WORKERS="${WORKERS:-8}"
 PATIENCE="${PATIENCE:-6}"
+N_CLUSTERS="${N_CLUSTERS:-5}"
+RAMP_SCALES="${RAMP_SCALES:-0.75 0.5 0.25}"
+RAMP_EPOCHS="${RAMP_EPOCHS:-2}"
 
-mkdir -p "$OUT"
+OUT_NORMAL="${OUT:-$RUNS/ensemble_dinov3_raw_native_edda_h100}"
+OUT_CLUSTER="$RUNS/ensemble_dinov3_raw_native_edda_h100_cluster"
 
-echo ">>> 2xH100 DDP native run: $N_EXPERTS experts x $EPOCHS epochs, per-rank bs $BATCH (global $((BATCH * 2)))"
 export PYTHONUNBUFFERED=1
-"$TORCHRUN" --nproc_per_node=2 --standalone \
-  train_dinov3_ensemble.py \
-  --data-root "$DATA" \
-  --output-dir "$OUT" \
-  --native --amp-bf16 \
-  --lora-last-layers 1 \
-  --n-experts "$N_EXPERTS" \
-  --epochs "$EPOCHS" \
-  --batch-size "$BATCH" \
-  --lr "$LR" \
-  --warmup-epochs "$WARMUP" \
-  --weight-decay 0.05 \
-  --label-smoothing 0.1 \
-  --mixup-alpha 0.2 \
-  --patience "$PATIENCE" \
-  --num-workers "$WORKERS" \
-  --no-gate \
-  2>&1 | tee "$OUT/train.log"
+
+run_leg() {
+  local out="$1"; shift
+  mkdir -p "$out"
+  echo
+  echo "=== launching (log: $out/train.log) ==="
+  "$TORCHRUN" --nproc_per_node=2 --standalone \
+    train_dinov3_ensemble.py \
+    --data-root "$DATA" \
+    --output-dir "$out" \
+    --native --amp-bf16 \
+    --lora-last-layers 1 \
+    --n-experts "$N_EXPERTS" \
+    --epochs "$EPOCHS" \
+    --batch-size "$BATCH" \
+    --lr "$LR" \
+    --warmup-epochs "$WARMUP" \
+    --weight-decay 0.05 \
+    --label-smoothing 0.1 \
+    --mixup-alpha 0.2 \
+    --patience "$PATIENCE" \
+    --num-workers "$WORKERS" \
+    --ramp-scales $RAMP_SCALES \
+    --ramp-epochs "$RAMP_EPOCHS" \
+    "$@" \
+    2>&1 | tee "$out/train.log"
+}
+
+echo "=== Leg A: non-cluster, $N_EXPERTS leave-one-out experts, no gate ==="
+echo "    $EPOCHS epochs, ramp '$RAMP_SCALES' x$RAMP_EPOCHS epochs each, per-rank bs $BATCH (global $((BATCH * 2)))"
+run_leg "$OUT_NORMAL" --no-gate
 
 echo
-echo ">>> Done: $OUT/metrics_val.json  $OUT/submission.csv"
+echo "=== Leg B: cluster mode, UMAP on val + $N_CLUSTERS cluster experts + gate ==="
+run_leg "$OUT_CLUSTER" --cluster-mode on --n-clusters "$N_CLUSTERS"
+
+echo
+echo ">>> Done. Leg A: $OUT_NORMAL/metrics_val.json  Leg B: $OUT_CLUSTER/metrics_val.json"
