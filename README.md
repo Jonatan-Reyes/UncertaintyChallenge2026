@@ -115,7 +115,7 @@ Both checkpoints share the same format — a dict containing `state_dict`,
 ```bash
 python -m student.eval \
     --checkpoint runs/baseline/model_temp_scaled.pt \
-    --data-root /path/to/challenge_data
+    --data-root /home/alice/work/dtu_ss_26/challenge_data
 ```
 
 Prints the same five numbers the server will compute:
