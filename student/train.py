@@ -33,7 +33,7 @@ from student.data import (
     default_eval_transform,
     default_train_transform,
 )
-from student.model import DEFAULT_BACKBONE, Classifier
+from student.model import DEFAULT_BACKBONE, Classifier, LoRAClassifier
 
 
 def _split_decay(named_params) -> tuple[list[nn.Parameter], list[nn.Parameter]]:
@@ -218,6 +218,20 @@ def save_checkpoint(
     path: Path,
     hyperparameters: dict | None = None,
 ) -> None:
+    if isinstance(model, LoRAClassifier):
+        path.mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(path)
+        meta = {
+            "num_classes": int(num_classes),
+            "temperature": float(temperature),
+            "backbone": getattr(model, "backbone_name", DEFAULT_BACKBONE),
+            "lora": getattr(model, "lora_config", None),
+        }
+        if hyperparameters is not None:
+            meta["hyperparameters"] = dict(hyperparameters)
+        (path / "checkpoint_meta.json").write_text(json.dumps(meta, indent=2))
+        return
+
     ckpt = {
         "state_dict": model.state_dict(),
         "num_classes": int(num_classes),
@@ -241,6 +255,12 @@ def train(
     num_workers: int = 4,
     backbone: str = DEFAULT_BACKBONE,
     pretrained: bool = False,
+    use_lora: bool = False,
+    lora_r: int = 8,
+    lora_alpha: int = 16,
+    lora_dropout: float = 0.0,
+    lora_target_modules: tuple[str, ...] = ("qkv", "proj", "fc1", "fc2"),
+    modules_to_save: tuple[str, ...] = ("head",),
     early_stop_metric: str = "accuracy",
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -257,6 +277,12 @@ def train(
         "num_workers": int(num_workers),
         "backbone": str(backbone),
         "pretrained": bool(pretrained),
+        "use_lora": bool(use_lora),
+        "lora_r": int(lora_r),
+        "lora_alpha": int(lora_alpha),
+        "lora_dropout": float(lora_dropout),
+        "lora_target_modules": list(lora_target_modules),
+        "modules_to_save": list(modules_to_save),
         "early_stop_metric": str(early_stop_metric),
         "data_root": str(data_root),
     }
@@ -269,9 +295,23 @@ def train(
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
                             num_workers=num_workers)
 
-    model = Classifier(
-        train_ds.num_classes, backbone_name=backbone, pretrained=pretrained,
-    ).to(device)
+    if use_lora:
+        model = LoRAClassifier(
+            train_ds.num_classes,
+            backbone_name=backbone,
+            pretrained=pretrained,
+            lora_r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            lora_target_modules=tuple(lora_target_modules),
+            modules_to_save=tuple(modules_to_save),
+        ).to(device)
+    else:
+        model = Classifier(
+            train_ds.num_classes,
+            backbone_name=backbone,
+            pretrained=pretrained,
+        ).to(device)
     optimizer = make_optimizer(model, lr_backbone=lr, lr_head=head_lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     criterion = nn.CrossEntropyLoss()
@@ -283,12 +323,20 @@ def train(
     )
     trainer.fit(epochs)
 
-    save_checkpoint(model, train_ds.num_classes, 1.0, output_dir / "model.pt", hyperparameters=hparams)
-    print("saved model.pt")
+    if use_lora:
+        save_checkpoint(model, train_ds.num_classes, 1.0, output_dir / "model_lora", hyperparameters=hparams)
+        print("saved model_lora/")
+    else:
+        save_checkpoint(model, train_ds.num_classes, 1.0, output_dir / "model.pt", hyperparameters=hparams)
+        print("saved model.pt")
 
     T = temperature_scale(model, val_loader, device)
-    save_checkpoint(model, train_ds.num_classes, T, output_dir / "model_temp_scaled.pt", hyperparameters=hparams)
-    print(f"learned T={T:.4f} → saved model_temp_scaled.pt")
+    if use_lora:
+        save_checkpoint(model, train_ds.num_classes, T, output_dir / "model_temp_scaled_lora", hyperparameters=hparams)
+        print(f"learned T={T:.4f} -> saved model_temp_scaled_lora/")
+    else:
+        save_checkpoint(model, train_ds.num_classes, T, output_dir / "model_temp_scaled.pt", hyperparameters=hparams)
+        print(f"learned T={T:.4f} -> saved model_temp_scaled.pt")
 
 
 def main() -> None:
@@ -315,7 +363,22 @@ def main() -> None:
                         help="timm model id (e.g. resnet50, resnet18, convnext_small, vit_base_patch16_224).")
     parser.add_argument("--pretrained", action="store_true",
                         help="Initialize the backbone from timm's pretrained weights.")
+    parser.add_argument("--use-lora", action="store_true",
+                        help="Use LoRAClassifier instead of the base Classifier.")
+    parser.add_argument("--lora-r", type=int, default=8,
+                        help="LoRA rank; set >0 to enable PEFT LoRA on the backbone.")
+    parser.add_argument("--lora-alpha", type=int, default=16,
+                        help="LoRA scaling alpha.")
+    parser.add_argument("--lora-dropout", type=float, default=0.0,
+                        help="LoRA dropout.")
+    parser.add_argument("--lora-target-modules", nargs="+",
+                        default=["qkv", "proj", "fc1", "fc2"],
+                        help="Module name fragments to target with LoRA adapters.")
+    parser.add_argument("--modules-to-save", nargs="+", default=["head"],
+                        help="Extra modules to keep trainable/saved in LoRA checkpoints (e.g. head).")
     args = parser.parse_args()
+    args.lora_target_modules = tuple(args.lora_target_modules)
+    args.modules_to_save = tuple(args.modules_to_save)
     train(**vars(args))
 
 

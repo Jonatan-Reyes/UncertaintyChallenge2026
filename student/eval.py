@@ -24,12 +24,36 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+try:
+    from peft import PeftModel
+except ImportError:  # pragma: no cover - only needed for LoRA checkpoints
+    PeftModel = None
+
 from student.data import IWildCamChallengeDataset, default_eval_transform
 from student.metrics import compute_all_metrics
 from student.model import DEFAULT_BACKBONE, Classifier
 
 
 def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
+    if ckpt_path.is_dir():
+        meta_path = ckpt_path / "checkpoint_meta.json"
+        if not meta_path.exists():
+            raise FileNotFoundError(f"missing LoRA metadata: {meta_path}")
+        meta = json.loads(meta_path.read_text())
+        backbone_name = meta.get("backbone", DEFAULT_BACKBONE)
+        model = Classifier(int(meta["num_classes"]), backbone_name=backbone_name)
+        if PeftModel is None:
+            raise ImportError(
+                "peft is required to load LoRA checkpoints. Install with: pip install peft"
+            )
+        model.backbone = PeftModel.from_pretrained(
+            model.backbone,
+            ckpt_path,
+            is_trainable=False,
+        )
+        model.to(device).eval()
+        return model, float(meta.get("temperature", 1.0))
+
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     backbone_name = ckpt.get("backbone", DEFAULT_BACKBONE)
     model = Classifier(int(ckpt["num_classes"]), backbone_name=backbone_name)
