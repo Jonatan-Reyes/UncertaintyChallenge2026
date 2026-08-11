@@ -69,8 +69,9 @@ PATIENCE="${PATIENCE:-6}"
 mkdir -p "$OUT"
 
 echo ">>> 2xH100 DDP native run: $N_EXPERTS experts x $EPOCHS epochs, per-rank bs $BATCH (global $((BATCH * 2)))"
+export PYTHONUNBUFFERED=1
 "$TORCHRUN" --nproc_per_node=2 --standalone \
-  "$PY" -u train_dinov3_ensemble.py \
+  train_dinov3_ensemble.py \
   --data-root "$DATA" \
   --output-dir "$OUT" \
   --native --amp-bf16 \
