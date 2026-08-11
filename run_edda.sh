@@ -7,7 +7,8 @@
 #   per-rank batch 96 (global 192), lr 2e-4, warmup 3 epochs, cosine, patience 6
 #
 # Node prerequisites:
-#   1. conda env `ss` recreated from ss_env.yml (torch cu12x, timm, peft, ...)
+#   1. a conda env activated (torch cu12x, timm, peft, umap-learn, ...); the
+#      script uses $CONDA_PREFIX/bin/python and .../bin/torchrun automatically
 #   2. raw challenge_data/ present at $DATA (rsync from the dev box; runs/ not needed)
 #   3. two GPUs visible:  python -c "import torch; print(torch.cuda.device_count())" == 2
 #
@@ -18,12 +19,35 @@
 # Output: $OUT/experts/ (expert_seed0-4.pt), $OUT/metrics_val.json, $OUT/submission.csv
 set -euo pipefail
 cd "$(dirname "$0")"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
-PY="/users/aliceschiavone/miniconda3/envs/ss/bin/python"
-TORCHRUN="${TORCHRUN:-/users/aliceschiavone/miniconda3/envs/ss/bin/torchrun}"
-RUNS="${RUNS:-/users/aliceschiavone/ss26/UncertaintyChallenge2026/runs}"
-DATA="${DATA:-/users/aliceschiavone/ss26/UncertaintyChallenge2026/challenge_data}"
+# Resolve python/torchrun from the active conda env (or PY/TORCHRUN overrides).
+if [ -z "${PY:-}" ] && [ -n "${CONDA_PREFIX:-}" ] && [ -x "$CONDA_PREFIX/bin/python" ]; then
+    PY="$CONDA_PREFIX/bin/python"
+fi
+if [ -z "${PY:-}" ]; then
+    PY="$(command -v python)"
+fi
+if [ -z "${TORCHRUN:-}" ] && [ -n "${CONDA_PREFIX:-}" ] && [ -x "$CONDA_PREFIX/bin/torchrun" ]; then
+    TORCHRUN="$CONDA_PREFIX/bin/torchrun"
+fi
+if [ -z "${TORCHRUN:-}" ]; then
+    TORCHRUN="$(command -v torchrun)"
+fi
+if [ -z "${PY:-}" ] || [ ! -x "${PY:-}" ]; then
+    echo "ERROR: could not find a python in the active conda env. Activate it, e.g."
+    echo "  conda activate ss26"
+    exit 1
+fi
+RUNS="${RUNS:-$PROJECT_ROOT/runs}"
+DATA="${DATA:-$PROJECT_ROOT/challenge_data}"
 OUT="${OUT:-$RUNS/ensemble_dinov3_raw_native_edda_h100}"
+
+[ -d "$DATA" ] || {
+    echo "ERROR: data dir not found: $DATA"
+    echo "  export DATA=/path/to/challenge_data"
+    exit 1
+}
 
 N_EXPERTS="${N_EXPERTS:-5}"
 EPOCHS="${EPOCHS:-20}"
