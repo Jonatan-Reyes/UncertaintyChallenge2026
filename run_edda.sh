@@ -19,7 +19,7 @@
 # Output: $OUT/experts/ (expert_seed0-4.pt), $OUT/metrics_val.json, $OUT/submission.csv
 set -euo pipefail
 cd "$(dirname "$0")"
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+PROJECT_ROOT="/users/aliceschiavone/ss26/"
 
 # Resolve python/torchrun from the active conda env (or PY/TORCHRUN overrides).
 if [ -z "${PY:-}" ] && [ -n "${CONDA_PREFIX:-}" ] && [ -x "$CONDA_PREFIX/bin/python" ]; then
