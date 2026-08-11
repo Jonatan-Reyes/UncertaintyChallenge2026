@@ -32,10 +32,22 @@ from student.model import DEFAULT_BACKBONE, Classifier
 def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     backbone_name = ckpt.get("backbone", DEFAULT_BACKBONE)
-    model = Classifier(int(ckpt["num_classes"]), backbone_name=backbone_name)
+    model = Classifier(
+        int(ckpt["num_classes"]),
+        backbone_name=backbone_name,
+        pooling=ckpt.get("pooling"),
+        img_size=ckpt.get("img_size"),
+    )
     model.load_state_dict(ckpt["state_dict"])
     model.to(device).eval()
     return model, float(ckpt.get("temperature", 1.0))
+
+
+def eval_transform_for_checkpoint(ckpt_path: Path):
+    """Build the eval transform matching a checkpoint's training resolution."""
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    img_size = ckpt.get("img_size")
+    return default_eval_transform(img_size) if img_size is not None else default_eval_transform()
 
 
 def collect_predictions(
@@ -72,7 +84,7 @@ def main() -> None:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, temperature = load_checkpoint(args.checkpoint, device)
-    val_ds = IWildCamChallengeDataset(args.data_root, "val", default_eval_transform())
+    val_ds = IWildCamChallengeDataset(args.data_root, "val", eval_transform_for_checkpoint(args.checkpoint))
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False,
                             num_workers=args.num_workers)
     metrics = evaluate(model, val_loader, device, temperature)

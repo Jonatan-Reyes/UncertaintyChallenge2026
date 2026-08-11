@@ -43,19 +43,41 @@ class Classifier(nn.Module):
         num_classes: int,
         backbone_name: str = DEFAULT_BACKBONE,
         pretrained: bool = False,
+        pooling: str | None = None,
+        img_size: int | None = None,
     ):
         super().__init__()
-        self.backbone = timm.create_model(
-            backbone_name, pretrained=pretrained, num_classes=0
-        )
+        backbone_kwargs = {}
+        if img_size is not None:
+            backbone_kwargs["img_size"] = img_size
+        try:
+            self.backbone = timm.create_model(
+                backbone_name, pretrained=pretrained, num_classes=0, **backbone_kwargs
+            )
+        except TypeError:
+            # fully-convolutional backbones (e.g. ConvNeXt) don't take img_size
+            self.backbone = timm.create_model(backbone_name, pretrained=pretrained, num_classes=0)
         self.backbone_name = backbone_name
         self.embed_dim = int(self.backbone.num_features)
         self.num_classes = int(num_classes)
         self.head = nn.Linear(self.embed_dim, self.num_classes)
+        # 'cls' / 'avg' pool the raw token sequence ourselves instead of
+        # relying on timm's global_pool: some ViT checkpoints (e.g. DINOv2)
+        # only ship a `norm` layer and don't have the separate `fc_norm`
+        # timm's 'avg' head expects, so overriding global_pool at
+        # construction time breaks strict state-dict loading.
+        self.pooling = pooling
 
     def embed(self, x: torch.Tensor) -> torch.Tensor:
         """Per-sample feature vectors, shape ``(N, embed_dim)``."""
-        return self.backbone(x)
+        if self.pooling is None:
+            return self.backbone(x)
+        tokens = self.backbone.forward_features(x)
+        if self.pooling == "cls":
+            return tokens[:, 0]
+        if self.pooling == "avg":
+            return tokens[:, self.backbone.num_prefix_tokens:].mean(dim=1)
+        raise ValueError(f"unknown pooling {self.pooling!r}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.head(self.embed(x))

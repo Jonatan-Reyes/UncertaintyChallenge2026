@@ -1,0 +1,7 @@
+challenge_data/
+.claude
+__pycache__/
+features/
+runs/
+logs/
+submission*.csv

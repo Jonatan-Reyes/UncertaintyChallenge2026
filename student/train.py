@@ -32,6 +32,7 @@ from student.data import (
     IWildCamChallengeDataset,
     default_eval_transform,
     default_train_transform,
+    random_resized_crop_train_transform,
 )
 from student.model import DEFAULT_BACKBONE, Classifier
 
@@ -112,12 +113,14 @@ class Trainer:
         total_loss = 0.0
         total_correct = 0
         total = 0
+        amp_enabled = self.device.type == "cuda"
         for imgs, labels in tqdm(self.train_loader, desc="train", leave=False):
             imgs = imgs.to(self.device)
             labels = labels.to(self.device)
             self.optimizer.zero_grad()
-            logits = self.model(imgs)
-            loss = self.criterion(logits, labels)
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=amp_enabled):
+                logits = self.model(imgs)
+                loss = self.criterion(logits, labels)
             loss.backward()
             self.optimizer.step()
             total_loss += loss.item() * imgs.size(0)
@@ -134,11 +137,13 @@ class Trainer:
         self.model.eval()
         probs_chunks: list[np.ndarray] = []
         labels_chunks: list[np.ndarray] = []
+        amp_enabled = self.device.type == "cuda"
         with torch.no_grad():
             for imgs, labels in self.val_loader:
                 imgs = imgs.to(self.device)
-                logits = self.model(imgs)
-                probs = torch.softmax(logits, dim=1)
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=amp_enabled):
+                    logits = self.model(imgs)
+                probs = torch.softmax(logits.float(), dim=1)
                 probs_chunks.append(probs.cpu().numpy())
                 labels_chunks.append(np.asarray(labels))
         probs = np.concatenate(probs_chunks)
@@ -202,11 +207,14 @@ def fit_temperature(logits: torch.Tensor, labels: torch.Tensor) -> float:
 def temperature_scale(model: nn.Module, val_loader: DataLoader, device) -> float:
     """Collect val logits, then fit a single scalar T against NLL."""
     model.eval()
+    amp_enabled = device.type == "cuda"
     logits_list, labels_list = [], []
     with torch.no_grad():
         for imgs, labels in val_loader:
             imgs = imgs.to(device)
-            logits_list.append(model(imgs))
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=amp_enabled):
+                logits = model(imgs)
+            logits_list.append(logits.float())
             labels_list.append(labels.to(device))
     return fit_temperature(torch.cat(logits_list), torch.cat(labels_list))
 
@@ -224,6 +232,14 @@ def save_checkpoint(
         "temperature": float(temperature),
         "backbone": getattr(model, "backbone_name", DEFAULT_BACKBONE),
     }
+    pooling = getattr(model, "pooling", None)
+    if pooling is not None:
+        ckpt["pooling"] = pooling
+        patch_embed = getattr(model.backbone, "patch_embed", None)
+        img_size = getattr(patch_embed, "img_size", None)
+        if img_size is not None:
+            # (H, W) tuple; models used here are square.
+            ckpt["img_size"] = int(img_size[0]) if isinstance(img_size, (tuple, list)) else int(img_size)
     if hyperparameters is not None:
         ckpt["hyperparameters"] = dict(hyperparameters)
     torch.save(ckpt, path)
@@ -242,6 +258,11 @@ def train(
     backbone: str = DEFAULT_BACKBONE,
     pretrained: bool = False,
     early_stop_metric: str = "accuracy",
+    pooling: str | None = None,
+    img_size: int | None = None,
+    aug: str = "default",
+    label_smoothing: float = 0.0,
+    init_head_from: Path | None = None,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     output_dir = Path(output_dir)
@@ -258,12 +279,22 @@ def train(
         "backbone": str(backbone),
         "pretrained": bool(pretrained),
         "early_stop_metric": str(early_stop_metric),
+        "pooling": pooling,
+        "img_size": img_size,
+        "aug": aug,
+        "label_smoothing": float(label_smoothing),
         "data_root": str(data_root),
     }
     (output_dir / "config.json").write_text(json.dumps(hparams, indent=2))
 
-    train_ds = IWildCamChallengeDataset(data_root, "train", default_train_transform())
-    val_ds = IWildCamChallengeDataset(data_root, "val", default_eval_transform())
+    eval_transform = default_eval_transform(img_size) if img_size is not None else default_eval_transform()
+    if aug == "rrc":
+        train_transform = random_resized_crop_train_transform(img_size) if img_size is not None else random_resized_crop_train_transform()
+    else:
+        train_transform = default_train_transform(img_size) if img_size is not None else default_train_transform()
+
+    train_ds = IWildCamChallengeDataset(data_root, "train", train_transform)
+    val_ds = IWildCamChallengeDataset(data_root, "val", eval_transform)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
                               num_workers=num_workers, drop_last=False)
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
@@ -271,10 +302,18 @@ def train(
 
     model = Classifier(
         train_ds.num_classes, backbone_name=backbone, pretrained=pretrained,
+        pooling=pooling, img_size=img_size,
     ).to(device)
+    if init_head_from is not None:
+        init_ckpt = torch.load(init_head_from, map_location=device, weights_only=False)
+        head_state = {
+            k[len("head."):]: v for k, v in init_ckpt["state_dict"].items() if k.startswith("head.")
+        }
+        model.head.load_state_dict(head_state)
+        print(f"initialized head from {init_head_from}")
     optimizer = make_optimizer(model, lr_backbone=lr, lr_head=head_lr, weight_decay=weight_decay)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
     trainer = Trainer(
         model=model, train_loader=train_loader, val_loader=val_loader,
@@ -315,6 +354,15 @@ def main() -> None:
                         help="timm model id (e.g. resnet50, resnet18, convnext_small, vit_base_patch16_224).")
     parser.add_argument("--pretrained", action="store_true",
                         help="Initialize the backbone from timm's pretrained weights.")
+    parser.add_argument("--pooling", type=str, default=None, choices=["cls", "avg"],
+                        help="Override timm's default ViT pooling (see student/model.py for why).")
+    parser.add_argument("--img-size", type=int, default=None,
+                        help="Override student.data.IMG_SIZE (needed for fixed-input-size backbones like DINOv2/v3).")
+    parser.add_argument("--aug", type=str, default="default", choices=["default", "rrc"],
+                        help="'rrc' = RandomResizedCrop(scale 0.6-1.0) + hflip instead of plain resize + hflip.")
+    parser.add_argument("--label-smoothing", type=float, default=0.0)
+    parser.add_argument("--init-head-from", type=Path, default=None,
+                        help="Warm-start the head from a previous checkpoint's head weights (LP->FT).")
     args = parser.parse_args()
     train(**vars(args))
 

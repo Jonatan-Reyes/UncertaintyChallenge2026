@@ -22,8 +22,8 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from student.data import IWildCamChallengeDataset, default_eval_transform
-from student.eval import load_checkpoint
+from student.data import IWildCamChallengeDataset
+from student.eval import eval_transform_for_checkpoint, load_checkpoint
 
 DEFAULT_SPLITS: tuple[str, ...] = ("test_public", "test_private")
 
@@ -51,7 +51,12 @@ def write_submission(uids: list[str], probs: np.ndarray, output_path: Path) -> N
     for k in range(K):
         cols[f"p_{k}"] = probs[:, k]
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(cols).to_csv(output_path, index=False)
+    # float_format caps CSV precision at 10 significant digits -- otherwise a
+    # stray float64 upcast anywhere in the calibration chain (e.g. mixing in
+    # a float64 array like a class-prior) makes pandas print full
+    # double-precision reprs (~17 digits), roughly doubling file size for no
+    # accuracy benefit at these metrics' precision.
+    pd.DataFrame(cols).to_csv(output_path, index=False, float_format="%.10g")
 
 
 def predict(
@@ -64,11 +69,12 @@ def predict(
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, T = load_checkpoint(checkpoint, device)
+    transform = eval_transform_for_checkpoint(checkpoint)
 
     all_uids: list[str] = []
     all_probs: list[np.ndarray] = []
     for split in splits:
-        ds = IWildCamChallengeDataset(data_root, split, default_eval_transform())
+        ds = IWildCamChallengeDataset(data_root, split, transform)
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
         uids, probs = collect_test_predictions(model, loader, device, temperature=T)
         all_uids.extend(uids)

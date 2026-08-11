@@ -85,18 +85,42 @@ class IWildCamChallengeDataset(Dataset):
         return img, int(self.labels[idx])
 
 
-def default_train_transform() -> Callable:
+def default_train_transform(img_size: int = IMG_SIZE) -> Callable:
     return transforms.Compose([
-        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.Resize((img_size, img_size)),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
 
 
-def default_eval_transform() -> Callable:
+def random_resized_crop_train_transform(img_size: int = IMG_SIZE, scale: tuple[float, float] = (0.6, 1.0)) -> Callable:
+    """Animals are small/off-center and the source aspect (1.25-1.8) gets squashed by a
+    plain square resize; RandomResizedCrop attacks both at once."""
     return transforms.Compose([
-        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.RandomResizedCrop(img_size, scale=scale, interpolation=transforms.InterpolationMode.BICUBIC),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+    ])
+
+
+def default_eval_transform(img_size: int = IMG_SIZE) -> Callable:
+    return transforms.Compose([
+        transforms.Resize((img_size, img_size)),
+        transforms.ToTensor(),
+        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+    ])
+
+
+def aspect_preserving_eval_transform(img_size: int = IMG_SIZE) -> Callable:
+    """Resize the short side to ``img_size`` then center-crop, instead of squashing
+    to a square. Source images are 1.25-1.8 aspect, so this sees a genuinely
+    different (uncropped-edges-aside) view than ``default_eval_transform`` — useful
+    as a TTA view, not just a training-time fix."""
+    return transforms.Compose([
+        transforms.Resize(img_size),
+        transforms.CenterCrop(img_size),
         transforms.ToTensor(),
         transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
