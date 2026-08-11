@@ -19,10 +19,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-PY="$HOME/miniconda3/envs/ss/bin/python"
-TORCHRUN="${TORCHRUN:-$HOME/miniconda3/envs/ss/bin/torchrun}"
-RUNS="${RUNS:-/home/alice/work/dtu_ss_26/runs}"
-DATA="${DATA:-/home/alice/work/dtu_ss_26/challenge_data}"
+PY="/users/aliceschiavone/miniconda3/envs/ss/bin/python"
+TORCHRUN="${TORCHRUN:-/users/aliceschiavone/miniconda3/envs/ss/bin/torchrun}"
+RUNS="${RUNS:-/users/aliceschiavone/ss26/dtu_ss_26/runs}"
+DATA="${DATA:-/users/aliceschiavone/ss26/dtu_ss_26/challenge_data}"
 OUT="${OUT:-$RUNS/ensemble_dinov3_raw_native_edda_h100}"
 
 N_EXPERTS="${N_EXPERTS:-5}"
