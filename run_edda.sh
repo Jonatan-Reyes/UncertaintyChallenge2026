@@ -21,8 +21,8 @@ cd "$(dirname "$0")"
 
 PY="/users/aliceschiavone/miniconda3/envs/ss/bin/python"
 TORCHRUN="${TORCHRUN:-/users/aliceschiavone/miniconda3/envs/ss/bin/torchrun}"
-RUNS="${RUNS:-/users/aliceschiavone/ss26/dtu_ss_26/runs}"
-DATA="${DATA:-/users/aliceschiavone/ss26/dtu_ss_26/challenge_data}"
+RUNS="${RUNS:-/users/aliceschiavone/ss26/UncertaintyChallenge2026/runs}"
+DATA="${DATA:-/users/aliceschiavone/ss26/UncertaintyChallenge2026/challenge_data}"
 OUT="${OUT:-$RUNS/ensemble_dinov3_raw_native_edda_h100}"
 
 N_EXPERTS="${N_EXPERTS:-5}"
