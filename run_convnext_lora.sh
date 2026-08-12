@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
-# Single-expert DINOv2-Giant FULL-LoRA probe (all 40 blocks).
+# Single-expert ConvNeXt V2 Huge LoRA probe (all 1x1 convs), 518x518.
 #
-#   frozen Giant + LoRA on ALL transformer blocks (--lora-last-layers 0)
-#     + linear head; 1 expert trained on ALL train data (no LOO hold-out)
+#   frozen ConvNeXtV2-Huge + LoRA on every kernel-size-1 Conv2d (the pointwise
+#     channel-mixing layers) + linear head; 1 expert trained on ALL train data
 #   fixed 518x518 full-image, bf16 autocast, 2xH100 DDP
 #   per-rank batch 96 (global 192), lr 1e-4, cosine + 1-epoch warmup,
 #   10 epochs, label smoothing 0.05 + mixup 0.1, early stop on val NLL (patience 2)
 #
-# Tests the hypothesis that the frozen-last-block regime (lora-last-layers 1,
-# ~290k trainable params) is the bottleneck, and is one member of the
-# 3-architecture ensemble (Giant + ConvNeXtV2-Huge + RegNetY-1280), merged
-# post-hoc by cluster_entropy_temp.py --run-dirs. Output goes to a fresh dir so
-# the existing leg A/B runs are untouched:
-#   $RUNS/ensemble_dinov2_giant_518_lora_all_single_10e/
+# One member of the 3-architecture ensemble (Giant + ConvNeXtV2-Huge +
+# RegNetY-1280), merged post-hoc by cluster_entropy_temp.py --run-dirs.
+# Output goes to a fresh dir:
+#   $RUNS/ensemble_convnextv2_huge_518_lora_10e/
 #
 # Run inside tmux:
-#   tmux new-session -s loraall "bash run_lora_all_single.sh"
-#   # detach: Ctrl-b d     re-attach: tmux attach -t loraall
+#   tmux new-session -s convnext "bash run_convnext_lora.sh"
+#   # detach: Ctrl-b d     re-attach: tmux attach -t convnext
 set -euo pipefail
 cd "$(dirname "$0")"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -46,7 +44,7 @@ echo ">>> using torchrun:  $TORCHRUN"
 
 RUNS="${RUNS:-$PROJECT_ROOT/runs}"
 DATA="${DATA:-$PROJECT_ROOT/challenge_data}"
-OUT="${OUT:-$RUNS/ensemble_dinov2_giant_518_lora_all_single_10e}"
+OUT="${OUT:-$RUNS/ensemble_convnextv2_huge_518_lora_10e}"
 
 [ -d "$DATA" ] || {
     echo "ERROR: data dir not found: $DATA"
@@ -64,13 +62,13 @@ export PYTHONUNBUFFERED=1
 mkdir -p "$OUT"
 
 echo
-echo ">>> single-expert FULL-LoRA (all 40 blocks) run: 1 expert x 10 epochs"
+echo ">>> ConvNeXtV2-Huge LoRA (1x1 convs) run: 1 expert x 10 epochs @518px"
 echo ">>> log: $OUT/train.log  (tail -f to watch)"
 "$TORCHRUN" --nproc_per_node=2 --standalone \
     train_dinov3_ensemble.py \
     --data-root "$DATA" \
     --output-dir "$OUT" \
-    --backbone "${BACKBONE:-vit_giant_patch14_dinov2.lvd142m}" \
+    --backbone "${BACKBONE:-convnextv2_huge.fcmae_ft_in22k_in1k_512}" \
     --img-size 518 --full-image \
     --amp-bf16 \
     --lora-last-layers 0 \

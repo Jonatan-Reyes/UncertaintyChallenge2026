@@ -22,6 +22,9 @@ Usage:
   python cluster_entropy_temp.py --run-dir <run_dir>                          # best expert, K=10
   python cluster_entropy_temp.py --run-dir <run_dir> --embed-source average
   python cluster_entropy_temp.py --run-dir <run_dir> --alpha-grid "0 .5 1 2" --temp-clip-max 4
+  python cluster_entropy_temp.py --run-dirs <d1> <d2> <d3>                    # multi-architecture ensemble:
+                                                                            # each dir's experts are plain-averaged
+                                                                            # into one member, then combined
 """
 
 from __future__ import annotations
@@ -120,11 +123,17 @@ def cached_embeddings(model, loader, device, amp, path: Path, force: bool) -> np
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-dir", type=Path, required=True)
+    parser.add_argument("--run-dir", type=Path, default=None,
+                        help="single run dir (kept for backwards compatibility)")
+    parser.add_argument("--run-dirs", nargs="+", type=Path, default=None,
+                        help="multiple run dirs; each dir's experts are plain-averaged into one "
+                             "ensemble member, then members are combined (temp-scaled / "
+                             "cluster-entropy-T on val)")
     parser.add_argument("--data-root", type=Path, default=None,
                         help="override the data_root recorded in config.json")
     parser.add_argument("--embed-source", choices=["best", "average"], default="best",
-                        help="embedding source: single best expert on val NLL, or mean of all")
+                        help="embedding source within the best member: its single best expert on "
+                             "val NLL, or the mean of all its experts")
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--umap-components", type=int, default=2)
     parser.add_argument("--alpha-grid", type=str, default="0 0.25 0.5 0.75 1 1.5",
@@ -143,62 +152,83 @@ def main() -> None:
     parser.add_argument("--splits", nargs="+", default=None)
     args = parser.parse_args()
 
-    out_dir = Path(args.run_dir)
-    cfg = json.loads((out_dir / "config.json").read_text())
-    ph = out_dir / "posthoc"
-    ph.mkdir(parents=True, exist_ok=True)
+    run_dirs = list(args.run_dirs) if args.run_dirs else ([args.run_dir] if args.run_dir else [])
+    if not run_dirs:
+        parser.error("provide --run-dir or --run-dirs")
+    run_dirs = [Path(d) for d in run_dirs]
+
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
-    data_root = args.data_root if args.data_root is not None else cfg["data_root"]
-    splits = args.splits or cfg.get("splits", DEFAULT_SPLITS)
-    amp = bool(cfg.get("amp_bf16", False))
+    cfgs = [json.loads((d / "config.json").read_text()) for d in run_dirs]
+    data_root = args.data_root if args.data_root is not None else cfgs[0]["data_root"]
+    splits = args.splits or cfgs[0].get("splits", DEFAULT_SPLITS)
     alphas = [float(a) for a in args.alpha_grid.split()]
 
-    tf = M.eval_transform(int(cfg["img_size"]))
+    tf = M.eval_transform(int(cfgs[0]["img_size"]))
     val_ds = IWildCamChallengeDataset(data_root, "val", tf)
     train_ds = IWildCamChallengeDataset(data_root, "train", tf)
     val_labels = np.asarray(val_ds.labels, dtype=np.int64)
     train_labels = np.asarray(train_ds.labels, dtype=np.int64)
     num_classes = val_ds.num_classes
     print(f"train {len(train_ds)} / val {len(val_ds)} | {num_classes} classes | "
-          f"run {out_dir.name} | embed-source={args.embed_source} K={args.k}")
+          f"members: {[d.name for d in run_dirs]} | embed-source={args.embed_source} K={args.k}")
 
-    models = load_experts(out_dir, num_classes, cfg, device)
-    seeds = [int(re.search(r"\d+", p.stem).group())
-             for p in sorted(out_dir.glob("experts/expert_seed*.pt"),
-                             key=lambda p: int(re.search(r"\d+", p.stem).group()))]
-    print(f"loaded {len(models)} experts: seeds {seeds}")
+    # ---- per-member: load experts, cached per-expert val logits, average to one member ----
+    members = []
+    for d in run_dirs:
+        out_dir = Path(d)
+        cfg = json.loads((out_dir / "config.json").read_text())
+        ph = out_dir / "posthoc"
+        ph.mkdir(parents=True, exist_ok=True)
+        amp = bool(cfg.get("amp_bf16", False))
+        models = load_experts(out_dir, num_classes, cfg, device)
+        seeds = [int(re.search(r"\d+", p.stem).group())
+                 for p in sorted(out_dir.glob("experts/expert_seed*.pt"),
+                                 key=lambda p: int(re.search(r"\d+", p.stem).group()))]
+        print(f"member {d.name}: {len(models)} experts seeds {seeds}")
+        bs = int(cfg["batch_size"])
+        val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=0)
+        lp = ph / "val_logits.npz"
+        if lp.exists() and not args.force_embeddings:
+            stack = np.load(lp)["logits"]
+            print(f"  loaded cached val logits {stack.shape}")
+        else:
+            t0 = time.time()
+            stack = np.stack([M.collect_logits(m, val_loader, device, amp).cpu().numpy() for m in models], 0)
+            np.savez_compressed(lp, logits=stack)
+            print(f"  computed val logits {stack.shape} in {time.time() - t0:.0f}s")
+        per_expert_nll = [nll_np(softmax(stack[i]), val_labels) for i in range(len(models))]
+        print("  per-expert val NLL:", [f"{v:.4f}" for v in per_expert_nll])
+        members.append({"dir": out_dir, "cfg": cfg, "ph": ph, "amp": amp, "models": models,
+                        "seeds": seeds, "bs": bs, "val_loader": val_loader,
+                        "stack": stack, "per_expert_nll": per_expert_nll})
 
-    bs = int(cfg["batch_size"])
-    val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=0)
+    member_logits = np.stack([m["stack"].mean(axis=0) for m in members], axis=0)
+    per_member_nll = [nll_np(softmax(member_logits[i]), val_labels) for i in range(len(members))]
+    print("per-member val NLL:", [f"{v:.4f}" for v in per_member_nll])
 
-    # ---- per-expert val logits (cached) ----
-    lp = ph / "val_logits.npz"
-    if lp.exists() and not args.force_embeddings:
-        stack = np.load(lp)["logits"]
-        print(f"loaded cached val logits {stack.shape}")
-    else:
-        t0 = time.time()
-        stack = np.stack([M.collect_logits(m, val_loader, device, amp).cpu().numpy() for m in models], 0)
-        np.savez_compressed(lp, logits=stack)
-        print(f"computed val logits {stack.shape} in {time.time() - t0:.0f}s")
-    per_expert_nll = [nll_np(softmax(stack[i]), val_labels) for i in range(len(models))]
-    print("per-expert val NLL:", [f"{v:.4f}" for v in per_expert_nll])
-    best_i = int(np.argmin(per_expert_nll))
+    # ---- embedding source: the best member, then its best (or mean) expert ----
+    best_m = int(np.argmin(per_member_nll))
+    emb = members[best_m]
+    print(f"embedding source: member {emb['dir'].name} (val NLL {per_member_nll[best_m]:.4f})")
     if args.embed_source == "best":
-        use_i = [best_i]
-        print(f"embedding source: best expert (seed {seeds[best_i]}, val NLL {per_expert_nll[best_i]:.4f})")
+        use_i = [int(np.argmin(emb["per_expert_nll"]))]
+        print(f"  best expert (seed {emb['seeds'][use_i[0]]}, "
+              f"val NLL {emb['per_expert_nll'][use_i[0]]:.4f})")
     else:
-        use_i = list(range(len(models)))
-        print(f"embedding source: mean of all {len(models)} experts")
+        use_i = list(range(len(emb["models"])))
+        print(f"  mean of all {len(emb['models'])} experts")
 
-    # ---- per-expert train/val embeddings (cached) ----
-    train_loader = DataLoader(train_ds, batch_size=bs, shuffle=False, num_workers=args.num_workers)
+    # ---- per-expert train/val embeddings of the embedding member (cached) ----
+    train_loader = DataLoader(train_ds, batch_size=emb["bs"], shuffle=False,
+                              num_workers=args.num_workers)
     train_embs, val_embs = [], []
     for i in use_i:
-        tp = ph / f"train_emb_seed{seeds[i]}.npz"
-        vp = ph / f"val_emb_seed{seeds[i]}.npz"
-        train_embs.append(cached_embeddings(models[i], train_loader, device, amp, tp, args.force_embeddings))
-        val_embs.append(cached_embeddings(models[i], val_loader, device, amp, vp, args.force_embeddings))
+        tp = emb["ph"] / f"train_emb_seed{emb['seeds'][i]}.npz"
+        vp = emb["ph"] / f"val_emb_seed{emb['seeds'][i]}.npz"
+        train_embs.append(cached_embeddings(emb["models"][i], train_loader, device,
+                                            emb["amp"], tp, args.force_embeddings))
+        val_embs.append(cached_embeddings(emb["models"][i], emb["val_loader"], device,
+                                          emb["amp"], vp, args.force_embeddings))
     train_emb = np.mean(np.stack(train_embs, 0), 0) if args.embed_source == "average" else train_embs[0]
     val_emb = np.mean(np.stack(val_embs, 0), 0) if args.embed_source == "average" else val_embs[0]
     print(f"train emb {train_emb.shape} | val emb {val_emb.shape}")
@@ -207,7 +237,7 @@ def main() -> None:
     import umap
     from sklearn.cluster import KMeans
 
-    pipe_path = ph / f"entropy_pipeline_k{args.k}_c{args.umap_components}_{args.embed_source}.pkl"
+    pipe_path = emb["ph"] / f"entropy_pipeline_k{args.k}_c{args.umap_components}_{args.embed_source}.pkl"
     if pipe_path.exists() and not args.force_pipeline:
         pipe = pickle.loads(pipe_path.read_bytes())
         print(f"loaded cached pipeline (k={args.k})")
@@ -215,9 +245,9 @@ def main() -> None:
         t0 = time.time()
         all_emb = np.concatenate([train_emb, val_emb], 0)
         um = umap.UMAP(n_components=args.umap_components, n_neighbors=15, min_dist=0.1,
-                       metric="cosine", random_state=int(cfg.get("base_seed", 0)))
+                       metric="cosine", random_state=int(emb["cfg"].get("base_seed", 0)))
         z = um.fit_transform(all_emb)
-        km = KMeans(n_clusters=args.k, n_init=10, random_state=int(cfg.get("base_seed", 0))).fit(z)
+        km = KMeans(n_clusters=args.k, n_init=10, random_state=int(emb["cfg"].get("base_seed", 0))).fit(z)
         pipe = {"umap": um, "kmeans": km, "k": args.k,
                 "umap_components": args.umap_components, "embed_source": args.embed_source}
         pipe_path.write_bytes(pickle.dumps(pipe))
@@ -247,7 +277,7 @@ def main() -> None:
               f"{args.entropy}_Hn={Hn[k]:.3f}{flag}")
 
     # ---- temperature law & fit ----
-    avg_logits = stack.mean(axis=0)
+    avg_logits = member_logits.mean(axis=0)
     T_global = float(fit_temperature(torch.tensor(avg_logits), torch.tensor(val_labels)))
 
     def cluster_Tk(alpha, T0):
@@ -293,8 +323,17 @@ def main() -> None:
         "per_cluster_T": Tk.tolist(),
         "per_cluster_Hn": Hn.tolist(),
         "per_cluster_sizes": sizes.tolist(),
-        "best_expert": {"seed": int(seeds[best_i]), "val_nll": float(per_expert_nll[best_i])},
-        "per_expert_val_nll": per_expert_nll,
+        "members": [
+            {
+                "run": m["dir"].name,
+                "n_experts": len(m["models"]),
+                "member_nll": float(per_member_nll[i]),
+                "per_expert_val_nll": m["per_expert_nll"],
+            }
+            for i, m in enumerate(members)
+        ],
+        "best_expert": {"run": emb["dir"].name, "seed": int(emb["seeds"][use_i[0]]),
+                        "val_nll": float(emb["per_expert_nll"][use_i[0]])},
     }
     methods = {
         "plain_average": (probs_plain, None),
@@ -314,10 +353,10 @@ def main() -> None:
     report["chosen"] = chosen
     print(f"\nchosen: {chosen}")
 
-    (ph / "report.json").write_text(json.dumps(jsonable(report), indent=2))
-    (ph / "chosen.json").write_text(json.dumps(jsonable({"method": chosen, "alpha": best_alpha,
-                                                         "T_global": T_global}), indent=2))
-    (ph / "pipeline.pkl").write_bytes(pickle.dumps(pipe))
+    (emb["ph"] / "report.json").write_text(json.dumps(jsonable(report), indent=2))
+    (emb["ph"] / "chosen.json").write_text(json.dumps(jsonable({"method": chosen, "alpha": best_alpha,
+                                                                "T_global": T_global}), indent=2))
+    (emb["ph"] / "pipeline.pkl").write_bytes(pickle.dumps(pipe))
 
     if args.skip_submission:
         return
@@ -325,20 +364,21 @@ def main() -> None:
     # ---- submission ----
     all_uids, all_probs = [], []
 
-    def test_logits(split, loader):
-        p = ph / f"test_logits_{split}.npz"
+    def member_test_logits(member, split, loader):
+        p = member["ph"] / f"test_logits_{split}.npz"
         if p.exists() and not args.force_embeddings:
             return np.load(p)["logits"]
-        arr = np.stack([M.collect_logits(m, loader, device, amp).cpu().numpy() for m in models], 0)
+        arr = np.stack([M.collect_logits(m_, loader, device, member["amp"]).cpu().numpy()
+                        for m_ in member["models"]], 0)
         np.savez_compressed(p, logits=arr)
         return arr
 
     for split in splits:
         test_ds = IWildCamChallengeDataset(data_root, split, tf)
         uids = test_ds.uids
-        loader = DataLoader(test_ds, batch_size=bs, shuffle=False, num_workers=args.num_workers)
-        tstack = test_logits(split, loader)
-        tavg = tstack.mean(axis=0)
+        loader = DataLoader(test_ds, batch_size=emb["bs"], shuffle=False, num_workers=args.num_workers)
+        tstacks = [member_test_logits(member, split, loader) for member in members]
+        tavg = np.mean([s.mean(axis=0) for s in tstacks], axis=0)
 
         if chosen in ("plain_average", "temp_scaled_average"):
             T = 1.0 if chosen == "plain_average" else T_global
@@ -346,8 +386,9 @@ def main() -> None:
         else:
             tembs = []
             for i in use_i:
-                ep = ph / f"test_emb_{split}_seed{seeds[i]}.npz"
-                tembs.append(cached_embeddings(models[i], loader, device, amp, ep, args.force_embeddings))
+                ep = emb["ph"] / f"test_emb_{split}_seed{emb['seeds'][i]}.npz"
+                tembs.append(cached_embeddings(emb["models"][i], loader, device,
+                                               emb["amp"], ep, args.force_embeddings))
             t_emb = np.mean(np.stack(tembs, 0), 0) if args.embed_source == "average" else tembs[0]
             t_cl = pipe["kmeans"].predict(pipe["umap"].transform(t_emb))
             tprobs = softmax(tavg, Tk[t_cl])
@@ -355,7 +396,7 @@ def main() -> None:
         all_probs.append(tprobs)
         print(f"  {split}: {len(uids)} images")
 
-    sub = ph / "submission.csv"
+    sub = emb["ph"] / "submission.csv"
     write_submission(all_uids, np.concatenate(all_probs, axis=0), sub)
     print(f"\nwrote {sub} (method={chosen}, T_global={T_global:.4f}, alpha={best_alpha})")
 

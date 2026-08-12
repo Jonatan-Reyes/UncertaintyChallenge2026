@@ -138,7 +138,12 @@ class DinoV3LoraExpert(nn.Module):
                 )
             ]
         else:
-            targets = list(LORA_TARGETS)
+            conv_targets = [
+                name
+                for name, mod in backbone.named_modules()
+                if isinstance(mod, nn.Conv2d) and tuple(mod.kernel_size) == (1, 1)
+            ]
+            targets = conv_targets if conv_targets else list(LORA_TARGETS)
         lora_cfg = LoraConfig(
             r=lora_r,
             lora_alpha=lora_alpha,
