@@ -24,10 +24,38 @@ import torch
 import torch.nn as nn
 from peft import LoraConfig, get_peft_model
 
+from student.metrics import ECE_BINS
+
 DEFAULT_BACKBONE = "vit_small_patch16_dinov3.lvd1689m"
 
 # Linear submodule names LoRA is injected into (ViT attention qkv/proj + MLP fc1/fc2).
 LORA_TARGET_MODULES = ("qkv", "proj", "fc1", "fc2")
+
+
+class SoftECELoss(nn.Module):
+    """Differentiable ECE surrogate: soft (sigmoid) bin membership instead of
+    the hard ``>=``/``<`` comparisons in ``metrics.ece``, so gradients can
+    flow back through it (e.g. for LBFGS-based temperature scaling).
+    """
+
+    def __init__(self, n_bins: int = ECE_BINS, sharpness: float = 50.0):
+        super().__init__()
+        self.register_buffer("edges", torch.linspace(0.0, 1.0, n_bins + 1))
+        self.sharpness = sharpness
+
+    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        probs = torch.softmax(logits, dim=1)
+        confs, preds = probs.max(dim=1)
+        correct = (preds == labels).float()
+        n = confs.shape[0]
+        loss = confs.new_zeros(())
+        for lo, hi in zip(self.edges[:-1], self.edges[1:]):
+            w = torch.sigmoid((confs - lo) * self.sharpness) - torch.sigmoid((confs - hi) * self.sharpness)
+            wsum = w.sum() + 1e-12
+            bin_conf = (w * confs).sum() / wsum
+            bin_acc = (w * correct).sum() / wsum
+            loss = loss + torch.abs(bin_conf - bin_acc) * (wsum / n)
+        return loss
 
 
 class Classifier(nn.Module):

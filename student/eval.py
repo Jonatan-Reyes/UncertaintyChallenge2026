@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+import torchvision.transforms.functional as TF
 from torch.utils.data import DataLoader
 
 from student.data import IWildCamChallengeDataset, default_eval_transform
@@ -49,7 +50,14 @@ def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
 
 def tta_predict(model: nn.Module, imgs: torch.Tensor, temperature: float = 1.0) -> torch.Tensor:
     """Test-time augmentation: average softmax over the image and its horizontal flip."""
-    views = (imgs, torch.flip(imgs, dims=[3]))
+    views = (
+        imgs,
+        torch.flip(imgs, dims=[3]),
+        TF.rotate(imgs, 15),
+        TF.rotate(imgs, -15),
+        TF.rgb_to_grayscale(imgs, num_output_channels=3),
+        TF.solarize(imgs, threshold=0.5),
+    )
     probs = sum(torch.softmax(model(v) / temperature, dim=1) for v in views)
     return probs / len(views)
 

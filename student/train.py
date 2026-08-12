@@ -34,7 +34,7 @@ from student.data import (
     default_train_transform,
 )
 from student.eval import evaluate_val_by_domain, tta_predict
-from student.model import DEFAULT_BACKBONE, Classifier
+from student.model import DEFAULT_BACKBONE, Classifier, SoftECELoss
 from student.plotting import energy_score, plot_energy_ood_roc, plot_reliability_diagram
 
 
@@ -228,7 +228,7 @@ def fit_temperature(logits: torch.Tensor, labels: torch.Tensor) -> float:
     """
     log_T = nn.Parameter(torch.zeros(1, device=logits.device))
     optimizer = optim.LBFGS([log_T], lr=0.1, max_iter=100)
-    criterion = nn.CrossEntropyLoss()
+    criterion = SoftECELoss()
 
     def closure():
         optimizer.zero_grad()
