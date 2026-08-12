@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import optuna
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -185,32 +186,66 @@ class Trainer:
             self.model.load_state_dict(self.best_state_dict)
 
 
-def fit_temperature(logits: torch.Tensor, labels: torch.Tensor) -> float:
-    """Optimize a single scalar ``T`` to minimize NLL on ``(logits, labels)``.
+def fit_temperature(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    metric: str = "nll",
+    n_trials: int = 50,
+    seed: int | None = None,
+) -> float:
+    """Fit a single scalar temperature on ``(logits, labels)``.
 
-    Parameterized as ``T = exp(log_T)`` so the optimizer stays in (0, ∞)
-    without bounds constraints. Falls back to ``T = 1.0`` if LBFGS diverges
-    (e.g. on a tiny val set against a barely-trained model).
+    ``metric`` can be ``"nll"`` (default, differentiable via LBFGS) or
+    ``"ece"`` (non-differentiable, optimized with Optuna). ``n_trials`` is only
+    used for the ECE path.
     """
-    log_T = nn.Parameter(torch.zeros(1, device=logits.device))
-    optimizer = optim.LBFGS([log_T], lr=0.1, max_iter=100)
-    criterion = nn.CrossEntropyLoss()
+    metric = metric.lower()
+    if metric == "nll":
+        log_T = nn.Parameter(torch.zeros(1, device=logits.device))
+        optimizer = optim.LBFGS([log_T], lr=0.1, max_iter=100)
+        criterion = nn.CrossEntropyLoss()
 
-    def closure():
-        optimizer.zero_grad()
-        loss = criterion(logits / log_T.exp(), labels)
-        loss.backward()
-        return loss
+        def closure():
+            optimizer.zero_grad()
+            loss = criterion(logits / log_T.exp(), labels)
+            loss.backward()
+            return loss
 
-    optimizer.step(closure)
-    T = float(log_T.exp().detach().cpu())
-    if not (T > 0 and T < float("inf")):
-        return 1.0
-    return T
+        optimizer.step(closure)
+        T = float(log_T.exp().detach().cpu())
+        if not (T > 0 and T < float("inf")):
+            return 1.0
+        return T
+
+    if metric == "ece":
+        if n_trials <= 0:
+            n_trials = 1
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+        def objective(trial: optuna.Trial) -> float:
+            T = trial.suggest_float("T", 0.1, 10.0, log=True)
+            probs = torch.softmax(logits / T, dim=1).detach().cpu().numpy()
+            return float(M.ece(probs, labels.cpu().numpy()))
+
+        study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=seed))
+        study.optimize(objective, n_trials=n_trials)
+        T = float(study.best_trial.params["T"])
+        if not (T > 0 and T < float("inf")):
+            return 1.0
+        return T
+
+    raise ValueError(f"Unsupported temperature metric: {metric!r}; choose 'nll' or 'ece'.")
 
 
-def temperature_scale(model: nn.Module, val_loader: DataLoader, device) -> float:
-    """Collect val logits, then fit a single scalar T against NLL."""
+def temperature_scale(
+    model: nn.Module,
+    val_loader: DataLoader,
+    device,
+    metric: str = "nll",
+    n_trials: int = 50,
+    seed: int | None = None,
+) -> float:
+    """Collect val logits, then fit a scalar temperature with the chosen objective."""
     model.eval()
     logits_list, labels_list = [], []
     with torch.no_grad():
@@ -218,7 +253,13 @@ def temperature_scale(model: nn.Module, val_loader: DataLoader, device) -> float
             imgs = imgs.to(device)
             logits_list.append(model(imgs))
             labels_list.append(labels.to(device))
-    return fit_temperature(torch.cat(logits_list), torch.cat(labels_list))
+    return fit_temperature(
+        torch.cat(logits_list),
+        torch.cat(labels_list),
+        metric=metric,
+        n_trials=n_trials,
+        seed=seed,
+    )
 
 
 def save_checkpoint(
@@ -273,6 +314,9 @@ def train(
     lora_target_modules: tuple[str, ...] = ("qkv", "proj", "fc1", "fc2"),
     modules_to_save: tuple[str, ...] = ("head",),
     early_stop_metric: str = "accuracy",
+    temperature_metric: str = "nll",
+    temperature_n_trials: int = 50,
+    temperature_seed: int | None = None,
 ) -> None:
     device = torch.device(f"cuda:{device_idx}" if torch.cuda.is_available() and device_idx is not None else "cpu")
     output_dir = Path(output_dir)
@@ -297,6 +341,9 @@ def train(
         "lora_target_modules": list(lora_target_modules),
         "modules_to_save": list(modules_to_save),
         "early_stop_metric": str(early_stop_metric),
+        "temperature_metric": str(temperature_metric),
+        "temperature_n_trials": int(temperature_n_trials),
+        "temperature_seed": None if temperature_seed is None else int(temperature_seed),
         "data_root": str(data_root),
     }
     (output_dir / "config.json").write_text(json.dumps(hparams, indent=2))
@@ -354,13 +401,20 @@ def train(
         save_checkpoint(model, num_classes, 1.0, output_dir / "model.pt", hyperparameters=hparams)
         print("saved model.pt")
 
-    T = temperature_scale(model, val_loader, device)
+    T = temperature_scale(
+        model,
+        val_loader,
+        device,
+        metric=temperature_metric,
+        n_trials=temperature_n_trials,
+        seed=temperature_seed,
+    )
     if use_lora:
         save_checkpoint(model, num_classes, T, output_dir / "model_temp_scaled_lora", hyperparameters=hparams)
-        print(f"learned T={T:.4f} -> saved model_temp_scaled_lora/")
+        print(f"learned T={T:.4f} via {temperature_metric} -> saved model_temp_scaled_lora/")
     else:
         save_checkpoint(model, num_classes, T, output_dir / "model_temp_scaled.pt", hyperparameters=hparams)
-        print(f"learned T={T:.4f} -> saved model_temp_scaled.pt")
+        print(f"learned T={T:.4f} via {temperature_metric} -> saved model_temp_scaled.pt")
 
 
 def main() -> None:
@@ -382,6 +436,13 @@ def main() -> None:
                         choices=["accuracy", "nll", "brier"],
                         help="Which val metric drives early stopping. Default is "
                              "accuracy: we teach accuracy-first, calibration-second.")
+    parser.add_argument("--temperature-metric", type=str, default="nll",
+                        choices=["nll", "ece"],
+                        help="Objective used to fit the temperature scaling scalar on validation logits.")
+    parser.add_argument("--temperature-n-trials", type=int, default=50,
+                        help="Number of Optuna trials used when --temperature-metric=ece.")
+    parser.add_argument("--temperature-seed", type=int, default=None,
+                        help="Optional seed for the Optuna study when fitting temperature.")
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--backbone", type=str, default=DEFAULT_BACKBONE,
                         help="timm model id (e.g. resnet50, resnet18, convnext_small, vit_base_patch16_224).")
