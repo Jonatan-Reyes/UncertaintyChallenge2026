@@ -27,7 +27,7 @@ from torch.utils.data import DataLoader
 from student.data import IWildCamChallengeDataset, default_eval_transform
 from student.metrics import compute_all_metrics
 from student.model import DEFAULT_BACKBONE, Classifier
-from student.plotting import plot_reliability_diagram
+from student.plotting import energy_score, plot_energy_ood_roc, plot_reliability_diagram
 
 
 def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
@@ -47,17 +47,23 @@ def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
     return model, float(ckpt.get("temperature", 1.0))
 
 
+def tta_predict(model: nn.Module, imgs: torch.Tensor, temperature: float = 1.0) -> torch.Tensor:
+    """Test-time augmentation: average softmax over the image and its horizontal flip."""
+    views = (imgs, torch.flip(imgs, dims=[3]))
+    probs = sum(torch.softmax(model(v) / temperature, dim=1) for v in views)
+    return probs / len(views)
+
+
 def collect_predictions(
     model: nn.Module, loader: DataLoader, device, temperature: float = 1.0
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Run ``model`` over ``loader`` and return ``(probs, labels)`` as np arrays."""
+    """Run ``model`` over ``loader`` (with TTA) and return ``(probs, labels)`` as np arrays."""
     model.eval()
     all_probs, all_labels = [], []
     with torch.no_grad():
         for imgs, labels in loader:
             imgs = imgs.to(device)
-            logits = model(imgs)
-            probs = torch.softmax(logits / temperature, dim=1)
+            probs = tta_predict(model, imgs, temperature)
             all_probs.append(probs.cpu().numpy())
             all_labels.append(np.asarray(labels))
     return np.concatenate(all_probs, axis=0), np.concatenate(all_labels, axis=0)
@@ -70,6 +76,23 @@ def evaluate(
     return compute_all_metrics(probs, labels)
 
 
+def collect_energy(model: nn.Module, loader: DataLoader, device) -> np.ndarray:
+    """Ensemble-averaged energy score per sample (see ``student.plotting.energy_score``).
+
+    Uses ``forward_members`` for raw per-member logits — ``model.forward``'s
+    probability-averaged output always sums to 1, which would make the energy
+    score trivially constant.
+    """
+    model.eval()
+    chunks: list[np.ndarray] = []
+    with torch.no_grad():
+        for imgs, _ in loader:
+            imgs = imgs.to(device)
+            member_logits = model.forward_members(imgs).cpu().numpy()
+            chunks.append(energy_score(member_logits))
+    return np.concatenate(chunks, axis=0)
+
+
 def evaluate_val_by_domain(
     model: nn.Module, val_ds: IWildCamChallengeDataset, device,
     temperature: float = 1.0, batch_size: int = 32, num_workers: int = 4,
@@ -77,20 +100,22 @@ def evaluate_val_by_domain(
 ) -> dict:
     """Evaluate the val split as a whole, plus split by domain (id vs. ood).
 
-    If ``output_dir`` is given, also saves a reliability diagram (over the
-    full val split) to ``output_dir / "reliability_diagram.png"``.
+    If ``output_dir`` is given, also saves a reliability diagram and an
+    energy-based OOD-detection ROC curve (id vs. ood) to ``output_dir``.
     """
     loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     probs, labels = collect_predictions(model, loader, device, temperature)
+
+    domains = np.asarray(val_ds.domains)
+    id_mask = domains == "id"
+    ood_mask = domains == "ood"
 
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         plot_reliability_diagram(probs, labels, output_dir / "reliability_diagram.png")
-
-    domains = np.asarray(val_ds.domains)
-    id_mask = domains == "id"
-    ood_mask = domains == "ood"
+        energy = collect_energy(model, loader, device)
+        plot_energy_ood_roc(energy[id_mask], energy[ood_mask], output_dir / "energy_ood_roc.png")
 
     return {
         "overall": compute_all_metrics(probs, labels),

@@ -33,8 +33,9 @@ from student.data import (
     default_eval_transform,
     default_train_transform,
 )
-from student.eval import evaluate_val_by_domain
+from student.eval import evaluate_val_by_domain, tta_predict
 from student.model import DEFAULT_BACKBONE, Classifier
+from student.plotting import energy_score, plot_energy_ood_roc, plot_reliability_diagram
 
 
 def _split_decay(named_params) -> tuple[list[nn.Parameter], list[nn.Parameter]]:
@@ -141,25 +142,39 @@ class Trainer:
             total += imgs.size(0)
         return total_loss / total, total_correct / total
 
-    def evaluate_val(self) -> dict[str, dict[str, float]]:
+    def evaluate_val(self, epoch: int, output_dir: Path | None = None) -> dict[str, dict[str, float]]:
         """Return ``{overall, id, ood}`` each with ``{nll, accuracy, brier}``.
 
         Uses ``student.metrics`` so the numbers students see during training
-        are computed the same way as the master evaluator's scoring.
+        are computed the same way as the master evaluator's scoring. If
+        ``output_dir`` is given, also plots the reliability diagram and
+        energy-based OOD ROC for this epoch.
         """
         self.model.eval()
         probs_chunks: list[np.ndarray] = []
         labels_chunks: list[np.ndarray] = []
+        energy_chunks: list[np.ndarray] = []
         with torch.no_grad():
             for imgs, labels in self.val_loader:
                 imgs = imgs.to(self.device)
-                logits = self.model(imgs)
-                probs = torch.softmax(logits, dim=1)
+                probs = tta_predict(self.model, imgs)
                 probs_chunks.append(probs.cpu().numpy())
                 labels_chunks.append(np.asarray(labels))
+                if output_dir is not None:
+                    member_logits = self.model.forward_members(imgs).cpu().numpy()
+                    energy_chunks.append(energy_score(member_logits))
         probs = np.concatenate(probs_chunks)
         labels = np.concatenate(labels_chunks)
         domains = np.asarray(self.val_loader.dataset.domains)
+        id_mask = domains == "id"
+        ood_mask = domains == "ood"
+
+        if output_dir is not None:
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            plot_reliability_diagram(probs, labels, output_dir / f"reliability_diagram_epoch{epoch:03d}.png")
+            energy = np.concatenate(energy_chunks)
+            plot_energy_ood_roc(energy[id_mask], energy[ood_mask], output_dir / f"energy_ood_roc_epoch{epoch:03d}.png")
 
         def _subset(mask: np.ndarray) -> dict[str, float]:
             return {
@@ -170,14 +185,14 @@ class Trainer:
 
         return {
             "overall": _subset(np.ones(len(labels), dtype=bool)),
-            "id": _subset(domains == "id"),
-            "ood": _subset(domains == "ood"),
+            "id": _subset(id_mask),
+            "ood": _subset(ood_mask),
         }
 
-    def fit(self, epochs: int) -> None:
+    def fit(self, epochs: int, output_dir: Path | None = None) -> None:
         for epoch in range(1, epochs + 1):
             train_loss, train_acc = self.train_epoch()
-            val = self.evaluate_val()
+            val = self.evaluate_val(epoch, output_dir)
             self.scheduler.step()
             print(
                 f"epoch {epoch:3d} | train_loss={train_loss:.4f} train_acc={train_acc:.4f} | "
@@ -320,7 +335,7 @@ def train(
         optimizer=optimizer, scheduler=scheduler, criterion=criterion,
         device=device, patience=patience, early_stop_metric=early_stop_metric,
     )
-    trainer.fit(epochs)
+    trainer.fit(epochs, output_dir=output_dir)
 
     save_checkpoint(model, train_ds.num_classes, 1.0, output_dir / "model.pt", hyperparameters=hparams)
     print("saved model.pt")
