@@ -273,7 +273,7 @@ def main() -> None:
     for f in folds:
         tr = np.setdiff1d(np.arange(len(val_labels)), f)
         T0 = float(fit_temperature(torch.tensor(avg_logits[tr]), torch.tensor(val_labels[tr])))
-        cv_Ts.append(T0)
+        cv_Ts.append(nll_np(softmax(avg_logits[f], T0), val_labels[f]))
         a_f = min(alphas, key=lambda a: nll_at(a, T0, avg_logits[tr], val_labels[tr], val_cl[tr]))
         cv_nlls.append(nll_at(a_f, T0, avg_logits[f], val_labels[f], val_cl[f]))
     cv_nll = float(np.mean(cv_nlls))
@@ -310,7 +310,7 @@ def main() -> None:
 
     chosen = args.method
     if chosen == "auto":
-        chosen = min(report, key=lambda k: (report[k]["metrics"]["nll"], report[k]["cv_nll"] or np.inf))
+        chosen = min(methods, key=lambda k: (report[k]["metrics"]["nll"], report[k]["cv_nll"] or np.inf))
     report["chosen"] = chosen
     print(f"\nchosen: {chosen}")
 
