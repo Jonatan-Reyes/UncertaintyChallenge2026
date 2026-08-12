@@ -73,10 +73,12 @@ def run_split(
     out_dir: Path,
 ) -> None:
     out_csv = out_dir / f"animal_presence_{split}.csv"
+    rows: list[dict] = []
     done_uids: set[str] = set()
     if args.resume and out_csv.exists():
         done = pd.read_csv(out_csv)
         done_uids = set(done["uid"].astype(str))
+        rows = done.to_dict("records")
         print(f"  resume: {len(done_uids)} already scored for {split}")
 
     uids = ds.uids
@@ -89,7 +91,7 @@ def run_split(
             domains = domains[:args.limit]
 
     img_dir = ds.images_dir
-    rows: list[dict] = []
+    n_initial = len(rows)
     n_unclear = 0
     t0 = torch.cuda.Event(enable_timing=True) if device.type == "cuda" else None
     t1 = torch.cuda.Event(enable_timing=True) if device.type == "cuda" else None
@@ -161,8 +163,9 @@ def run_split(
 
     if t0 is not None:
         t1.record(); torch.cuda.synchronize()
-        sec_per_img = t0.elapsed_time(t1) / 1000 / len(rows) if len(rows) else 0.0
-        print(f"  {split}: {len(rows)} scored, {n_unclear} unclear "
+        n_new = len(rows) - n_initial
+        sec_per_img = t0.elapsed_time(t1) / 1000 / n_new if n_new else 0.0
+        print(f"  {split}: {n_new} scored this run ({len(rows)} total), {n_unclear} unclear "
               f"({sec_per_img:.2f} s/img -> est {sec_per_img*len(uids)/3600:.1f} h for full split)")
 
     has = np.array([r["has_animal"] for r in rows])
