@@ -215,6 +215,9 @@ class Trainer:
                           f"(no improvement in val/{self.early_stop_metric} for {self.patience} epochs)")
                     break
 
+            if output_dir is not None:
+                save_checkpoint(self.model, self.model.num_classes, 1.0, Path(output_dir) / "model.pt")
+
         if self.best_state_dict is not None:
             self.model.load_state_dict(self.best_state_dict)
 
