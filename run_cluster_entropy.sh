@@ -85,7 +85,7 @@ echo ">>> alpha grid:    $ALPHA_GRID"
     --run-dir "$RUN_DIR" \
     --embed-source "$EMBED_SOURCE" \
     --k "$K" \
-    --alpha-grid $ALPHA_GRID \
+    --alpha-grid "$ALPHA_GRID" \
     --entropy "$ENTROPY" \
     --temp-clip-min "$TEMP_CLIP_MIN" \
     --temp-clip-max "$TEMP_CLIP_MAX" \
