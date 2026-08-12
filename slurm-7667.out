@@ -1,0 +1,71 @@
+/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/_vendor/appdirs.py:96: SyntaxWarning: "\D" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\D"? A raw string is also an option.
+  Win XP:     C:\Documents and Settings\All Users\Application Data\<AppAuthor>\<AppName>
+/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/disk/delete.py:172: SyntaxWarning: 'return' in a 'finally' block
+  return False
+Traceback (most recent call last):
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1132, in __call__
+    return func(*args, **kwargs)
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main.py", line 83, in main_sourced
+    init_loggers(context)
+    ~~~~~~~~~~~~^^^^^^^^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main.py", line 42, in init_loggers
+    initialize_logging()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/logging.py", line 152, in initialize_logging
+    initialize_root_logger()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/logging.py", line 194, in initialize_root_logger
+    attach_stderr_handler(level=level)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/common/io.py", line 334, in attach_stderr_handler
+    with _logger_lock():
+         ~~~~~~~~~~~~^^
+  File "/home/wxp878/miniconda3/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/common/io.py", line 274, in _logger_lock
+    logging._acquireLock()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'logging' has no attribute '_acquireLock'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/wxp878/miniconda3/bin/conda", line 13, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main.py", line 112, in main
+    return conda_exception_handler(main, *args, **kwargs)
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1432, in conda_exception_handler
+    return_value = exception_handler(func, *args, **kwargs)
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1135, in __call__
+    return self.handle_exception(exc_val, exc_tb)
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1175, in handle_exception
+    return self.handle_unexpected_exception(exc_val, exc_tb)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1186, in handle_unexpected_exception
+    self.print_unexpected_error_report(error_report)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1248, in print_unexpected_error_report
+    from .cli.main_info import get_env_vars_str, get_main_info_str
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main_info.py", line 15, in <module>
+    from ..core.index import _supplement_index_with_system
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/core/index.py", line 15, in <module>
+    from .package_cache_data import PackageCacheData
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/core/package_cache_data.py", line 22, in <module>
+    from .path_actions import CacheUrlAction, ExtractPackageAction
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/core/path_actions.py", line 28, in <module>
+    from ..gateways.connection.download import download
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/connection/download.py", line 12, in <module>
+    from .session import CondaSession
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/connection/session.py", line 9, in <module>
+    from .adapters.ftp import FTPAdapter
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/connection/adapters/ftp.py", line 21, in <module>
+    import cgi
+ModuleNotFoundError: No module named 'cgi'
+hendrixgpu03fl.unicph.domain
+cuda Devices
+0
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+cuda
+train:   0%|          | 0/592 [00:00<?, ?it/s]train:   0%|          | 1/592 [00:02<23:10,  2.35s/it]train:   0%|          | 2/592 [00:02<12:26,  1.27s/it]train:   1%|          | 3/592 [00:03<09:01,  1.09it/s]train:   1%|          | 4/592 [00:03<07:24,  1.32it/s]train:   1%|          | 5/592 [00:04<06:31,  1.50it/s]train:   1%|          | 6/592 [00:04<05:58,  1.64it/s]train:   1%|          | 7/592 [00:05<05:37,  1.73it/s]train:   1%|▏         | 8/592 [00:05<05:23,  1.80it/s]train:   2%|▏         | 9/592 [00:06<05:14,  1.86it/s]train:   2%|▏         | 10/592 [00:06<05:08,  1.89it/s]train:   2%|▏         | 11/592 [00:07<05:03,  1.92it/s]train:   2%|▏         | 12/592 [00:07<05:00,  1.93it/s]train:   2%|▏         | 13/592 [00:08<04:57,  1.95it/s]train:   2%|▏         | 14/592 [00:08<04:56,  1.95it/s]train:   3%|▎         | 15/592 [00:09<04:54,  1.96it/s]train:   3%|▎         | 16/592 [00:09<04:53,  1.96it/s]train:   3%|▎         | 17/592 [00:10<04:52,  1.97it/s]train:   3%|▎         | 18/592 [00:10<04:51,  1.97it/s]train:   3%|▎         | 19/592 [00:11<04:50,  1.97it/s]train:   3%|▎         | 20/592 [00:11<04:50,  1.97it/s]train:   4%|▎         | 21/592 [00:12<04:49,  1.97it/s]train:   4%|▎         | 22/592 [00:12<04:48,  1.97it/s]train:   4%|▍         | 23/592 [00:13<04:48,  1.97it/s]train:   4%|▍         | 24/592 [00:14<04:48,  1.97it/s]train:   4%|▍         | 25/592 [00:14<04:47,  1.97it/s]train:   4%|▍         | 26/592 [00:15<04:47,  1.97it/s]train:   5%|▍         | 27/592 [00:15<04:46,  1.97it/s]train:   5%|▍         | 28/592 [00:16<04:45,  1.97it/s]train:   5%|▍         | 29/592 [00:16<04:45,  1.97it/s]train:   5%|▌         | 30/592 [00:17<04:44,  1.98it/s]train:   5%|▌         | 31/592 [00:17<04:43,  1.98it/s]train:   5%|▌         | 32/592 [00:18<04:43,  1.98it/s]train:   6%|▌         | 33/592 [00:18<04:42,  1.98it/s]train:   6%|▌         | 34/592 [00:19<04:42,  1.97it/s]train:   6%|▌         | 35/592 [00:19<04:42,  1.97it/s]train:   6%|▌         | 36/592 [00:20<04:41,  1.98it/s]train:   6%|▋         | 37/592 [00:20<04:41,  1.97it/s]train:   6%|▋         | 38/592 [00:21<04:40,  1.97it/s]train:   7%|▋         | 39/592 [00:21<04:40,  1.97it/s]train:   7%|▋         | 40/592 [00:22<04:39,  1.97it/s]train:   7%|▋         | 41/592 [00:22<04:39,  1.97it/s]train:   7%|▋         | 42/592 [00:23<04:38,  1.98it/s]train:   7%|▋         | 43/592 [00:23<04:37,  1.98it/s]train:   7%|▋         | 44/592 [00:24<04:38,  1.97it/s]train:   8%|▊         | 45/592 [00:24<04:37,  1.97it/s]train:   8%|▊         | 46/592 [00:25<04:36,  1.97it/s]train:   8%|▊         | 47/592 [00:25<04:35,  1.97it/s]train:   8%|▊         | 48/592 [00:26<04:35,  1.98it/s]train:   8%|▊         | 49/592 [00:26<04:35,  1.97it/s]train:   8%|▊         | 50/592 [00:27<04:34,  1.97it/s]train:   9%|▊         | 51/592 [00:27<04:33,  1.97it/s]train:   9%|▉         | 52/592 [00:28<04:33,  1.97it/s]train:   9%|▉         | 53/592 [00:28<04:33,  1.97it/s]train:   9%|▉         | 54/592 [00:29<04:32,  1.97it/s]train:   9%|▉         | 55/592 [00:29<04:32,  1.97it/s]train:   9%|▉         | 56/592 [00:30<04:31,  1.97it/s]train:  10%|▉         | 57/592 [00:30<04:30,  1.97it/s]train:  10%|▉         | 58/592 [00:31<04:30,  1.97it/s]train:  10%|▉         | 59/592 [00:31<04:30,  1.97it/s]train:  10%|█         | 60/592 [00:32<04:29,  1.97it/s]train:  10%|█         | 61/592 [00:32<04:28,  1.98it/s]train:  10%|█         | 62/592 [00:33<04:28,  1.97it/s]train:  11%|█         | 63/592 [00:33<04:28,  1.97it/s]train:  11%|█         | 64/592 [00:34<04:27,  1.97it/s]train:  11%|█         | 65/592 [00:34<04:27,  1.97it/s]train:  11%|█         | 66/592 [00:35<04:26,  1.97it/s]train:  11%|█▏        | 67/592 [00:35<04:26,  1.97it/s]train:  11%|█▏        | 68/592 [00:36<04:25,  1.97it/s]train:  12%|█▏        | 69/592 [00:36<04:24,  1.97it/s]train:  12%|█▏        | 70/592 [00:37<04:24,  1.97it/s]train:  12%|█▏        | 71/592 [00:37<04:24,  1.97it/s]train:  12%|█▏        | 72/592 [00:38<04:23,  1.97it/s]train:  12%|█▏        | 73/592 [00:38<04:23,  1.97it/s]train:  12%|█▎        | 74/592 [00:39<04:22,  1.97it/s]train:  13%|█▎        | 75/592 [00:39<04:22,  1.97it/s]train:  13%|█▎        | 76/592 [00:40<04:21,  1.97it/s]train:  13%|█▎        | 77/592 [00:40<04:20,  1.97it/s]train:  13%|█▎        | 78/592 [00:41<04:20,  1.97it/s]train:  13%|█▎        | 79/592 [00:41<04:19,  1.97it/s]train:  14%|█▎        | 80/592 [00:42<04:19,  1.97it/s]train:  14%|█▎        | 81/592 [00:42<04:18,  1.97it/s]train:  14%|█▍        | 82/592 [00:43<04:18,  1.97it/s]train:  14%|█▍        | 83/592 [00:43<04:17,  1.97it/s]train:  14%|█▍        | 84/592 [00:44<04:17,  1.97it/s]train:  14%|█▍        | 85/592 [00:44<04:17,  1.97it/s]train:  15%|█▍        | 86/592 [00:45<04:16,  1.97it/s]train:  15%|█▍        | 87/592 [00:45<04:15,  1.97it/s]train:  15%|█▍        | 88/592 [00:46<04:15,  1.97it/s]train:  15%|█▌        | 89/592 [00:46<04:14,  1.97it/s]train:  15%|█▌        | 90/592 [00:47<04:14,  1.97it/s]train:  15%|█▌        | 91/592 [00:47<04:13,  1.97it/s]train:  16%|█▌        | 92/592 [00:48<04:13,  1.97it/s]train:  16%|█▌        | 93/592 [00:48<04:12,  1.97it/s]train:  16%|█▌        | 94/592 [00:49<04:12,  1.97it/s]train:  16%|█▌        | 95/592 [00:49<04:11,  1.97it/s]train:  16%|█▌        | 96/592 [00:50<04:11,  1.97it/s]slurmstepd: error: *** JOB 7667 ON hendrixgpu03fl CANCELLED AT 2026-08-12T09:45:11 ***
