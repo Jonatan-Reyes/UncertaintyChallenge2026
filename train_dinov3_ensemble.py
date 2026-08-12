@@ -162,10 +162,18 @@ class DinoV3LoraExpert(nn.Module):
 def timm_create_backbone(backbone_id: str) -> nn.Module:
     import timm
 
-    backbone = timm.create_model(
-        backbone_id, pretrained=True, num_classes=0,
-        dynamic_img_size=True, dynamic_img_pad=True,
-    )
+    def _build(**kwargs) -> nn.Module:
+        return timm.create_model(
+            backbone_id, pretrained=True, num_classes=0, **kwargs
+        )
+
+    # dynamic_img_size/dynamic_img_pad are only accepted by ViT-style backbones;
+    # convnets (ConvNeXt, RegNet, ...) reject them. Try ViT kwargs first, then
+    # plain construction for convnets.
+    try:
+        backbone = _build(dynamic_img_size=True, dynamic_img_pad=True)
+    except TypeError:
+        backbone = _build()
     for p in backbone.parameters():
         p.requires_grad_(False)
     backbone.eval()
