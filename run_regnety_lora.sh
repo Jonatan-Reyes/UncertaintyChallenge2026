@@ -4,8 +4,9 @@
 #   frozen RegNetY-1280 SWAG + LoRA on every kernel-size-1 Conv2d (conv1/conv3/
 #     se channel-mixing layers) + linear head; 1 expert trained on ALL train data
 #   fixed 518x518 full-image, bf16 autocast, 2xH100 DDP
-#   per-rank batch 96 (global 192), lr 1e-4, cosine + 1-epoch warmup,
-#   10 epochs, label smoothing 0.05 + mixup 0.1, early stop on val NLL (patience 2)
+#   per-rank batch 48 x 2 grad-accum (effective global 192), lr 1e-4,
+#   cosine + 1-epoch warmup, 10 epochs, label smoothing 0.05 + mixup 0.1,
+#   early stop on val NLL (patience 2)
 #
 # One member of the 3-architecture ensemble (Giant + ConvNeXtV2-Huge +
 # RegNetY-1280), merged post-hoc by cluster_entropy_temp.py --run-dirs.
@@ -45,6 +46,10 @@ echo ">>> using torchrun:  $TORCHRUN"
 RUNS="${RUNS:-$PROJECT_ROOT/runs}"
 DATA="${DATA:-$PROJECT_ROOT/challenge_data}"
 OUT="${OUT:-$RUNS/ensemble_regnety1280_518_lora_10e}"
+BATCH="${BATCH:-48}"        # per rank; global effective = 48 x 2 ranks x 2 accum = 192
+GRAD_ACCUM="${GRAD_ACCUM:-2}"
+EPOCHS="${EPOCHS:-10}"
+LR="${LR:-1e-4}"
 
 [ -d "$DATA" ] || {
     echo "ERROR: data dir not found: $DATA"
@@ -74,9 +79,10 @@ echo ">>> log: $OUT/train.log  (tail -f to watch)"
     --lora-last-layers 0 \
     --lora-r 8 --lora-alpha 16 \
     --n-experts 1 \
-    --epochs 10 \
-    --batch-size 96 \
-    --lr 1e-4 \
+    --epochs "$EPOCHS" \
+    --batch-size "$BATCH" \
+    --grad-accum "$GRAD_ACCUM" \
+    --lr "$LR" \
     --warmup-epochs 1 \
     --weight-decay 0.05 \
     --label-smoothing 0.05 \

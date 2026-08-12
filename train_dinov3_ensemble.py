@@ -350,22 +350,27 @@ class DistributedWidthBucketSampler(Sampler):
 
 
 def train_epoch(model, loader, criterion, optimizer, device, mixup_alpha: float,
-                amp_bf16: bool = False) -> float:
+                amp_bf16: bool = False, grad_accum: int = 1) -> float:
     model.train()
     total_loss = 0.0
     total = 0
-    for imgs, labels in tqdm(loader, desc="train", leave=False):
+    optimizer.zero_grad()
+    for i, (imgs, labels) in enumerate(tqdm(loader, desc="train", leave=False)):
         imgs = imgs.to(device)
         labels = labels.to(device)
         mixed, ya, yb, lam = mixup_data(imgs, labels, mixup_alpha)
-        optimizer.zero_grad()
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=amp_bf16):
             logits = model(mixed)
             loss = lam * criterion(logits, ya) + (1 - lam) * criterion(logits, yb)
-        loss.backward()
-        optimizer.step()
+        (loss / grad_accum).backward()
         total_loss += loss.item() * imgs.size(0)
         total += imgs.size(0)
+        if (i + 1) % grad_accum == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+    if len(loader) % grad_accum != 0:
+        optimizer.step()
+        optimizer.zero_grad()
     return total_loss / total
 
 
@@ -497,7 +502,8 @@ def fit_expert(
         if _DIST:
             train_sampler.set_epoch(epoch)
         train_loss = train_epoch(model, train_loader, criterion, optimizer, device,
-                                 cfg.mixup_alpha, cfg.amp_bf16)
+                                 cfg.mixup_alpha, cfg.amp_bf16,
+                                 int(getattr(cfg, "grad_accum", 1)))
         val = evaluate(model, val_loader, device, cfg.amp_bf16)
         scheduler.step()
         if is_rank0():
@@ -715,6 +721,9 @@ def main() -> None:
     parser.add_argument("--label-smoothing", type=float, default=0.1)
     parser.add_argument("--mixup-alpha", type=float, default=0.2)
     parser.add_argument("--patience", type=int, default=4)
+    parser.add_argument("--grad-accum", type=int, default=1,
+                        help="accumulate gradients over N micro-batches before stepping; "
+                             "effective global batch = batch_size x world_size x grad_accum")
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--base-seed", type=int, default=0)
     parser.add_argument("--n-clusters", type=int, default=10)
@@ -767,6 +776,7 @@ def main() -> None:
         "label_smoothing": float(args.label_smoothing),
         "mixup_alpha": float(args.mixup_alpha),
         "patience": int(args.patience),
+        "grad_accum": int(args.grad_accum),
         "base_seed": int(args.base_seed),
         "lora_last_layers": int(args.lora_last_layers),
         "ramp_scales": [float(s) for s in args.ramp_scales],

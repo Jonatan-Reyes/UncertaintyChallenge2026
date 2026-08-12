@@ -4,8 +4,9 @@
 #   frozen Giant + LoRA on ALL transformer blocks (--lora-last-layers 0)
 #     + linear head; 1 expert trained on ALL train data (no LOO hold-out)
 #   fixed 518x518 full-image, bf16 autocast, 2xH100 DDP
-#   per-rank batch 96 (global 192), lr 1e-4, cosine + 1-epoch warmup,
-#   10 epochs, label smoothing 0.05 + mixup 0.1, early stop on val NLL (patience 2)
+#   per-rank batch 48 x 2 grad-accum (effective global 192), lr 1e-4,
+#   cosine + 1-epoch warmup, 10 epochs, label smoothing 0.05 + mixup 0.1,
+#   early stop on val NLL (patience 2)
 #
 # Tests the hypothesis that the frozen-last-block regime (lora-last-layers 1,
 # ~290k trainable params) is the bottleneck, and is one member of the
@@ -47,6 +48,10 @@ echo ">>> using torchrun:  $TORCHRUN"
 RUNS="${RUNS:-$PROJECT_ROOT/runs}"
 DATA="${DATA:-$PROJECT_ROOT/challenge_data}"
 OUT="${OUT:-$RUNS/ensemble_dinov2_giant_518_lora_all_single_10e}"
+BATCH="${BATCH:-48}"        # per rank; global effective = 48 x 2 ranks x 2 accum = 192
+GRAD_ACCUM="${GRAD_ACCUM:-2}"
+EPOCHS="${EPOCHS:-10}"
+LR="${LR:-1e-4}"
 
 [ -d "$DATA" ] || {
     echo "ERROR: data dir not found: $DATA"
@@ -76,9 +81,10 @@ echo ">>> log: $OUT/train.log  (tail -f to watch)"
     --lora-last-layers 0 \
     --lora-r 8 --lora-alpha 16 \
     --n-experts 1 \
-    --epochs 10 \
-    --batch-size 96 \
-    --lr 1e-4 \
+    --epochs "$EPOCHS" \
+    --batch-size "$BATCH" \
+    --grad-accum "$GRAD_ACCUM" \
+    --lr "$LR" \
     --warmup-epochs 1 \
     --weight-decay 0.05 \
     --label-smoothing 0.05 \
