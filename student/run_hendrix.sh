@@ -22,8 +22,7 @@ echo $CUDA_VISIBLE_DEVICES
     --output-dir results \
     --pretrained \
     --backbone vit_base_patch16_dinov3.lvd1689m \
-    --lora-r 8 --lora-alpha 16 --lora-dropout 0.05 \
-    --num-lora-members 4 \
+    --num-heads 4 --head-hidden-dim 256 --train-samples 1 --posterior-samples 5 \
     --epochs 30 --batch-size 32 \
-    --lr 1e-4 --head-lr 1e-3 \
+    --head-lr 1e-3 \
     --patience 3

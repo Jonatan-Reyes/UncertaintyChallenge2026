@@ -1,7 +1,7 @@
 torch
 torchvision
 timm
-peft
+ivon-opt
 pandas
 numpy
 pillow
