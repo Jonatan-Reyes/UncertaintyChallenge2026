@@ -279,7 +279,7 @@ def train(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
+    print(device)
     hparams = {
         "epochs": int(epochs),
         "batch_size": int(batch_size),

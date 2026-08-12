@@ -1,0 +1,72 @@
+/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/_vendor/appdirs.py:96: SyntaxWarning: "\D" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\D"? A raw string is also an option.
+  Win XP:     C:\Documents and Settings\All Users\Application Data\<AppAuthor>\<AppName>
+/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/disk/delete.py:172: SyntaxWarning: 'return' in a 'finally' block
+  return False
+Traceback (most recent call last):
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1132, in __call__
+    return func(*args, **kwargs)
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main.py", line 83, in main_sourced
+    init_loggers(context)
+    ~~~~~~~~~~~~^^^^^^^^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main.py", line 42, in init_loggers
+    initialize_logging()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/logging.py", line 152, in initialize_logging
+    initialize_root_logger()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/logging.py", line 194, in initialize_root_logger
+    attach_stderr_handler(level=level)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/common/io.py", line 334, in attach_stderr_handler
+    with _logger_lock():
+         ~~~~~~~~~~~~^^
+  File "/home/wxp878/miniconda3/lib/python3.14/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/common/io.py", line 274, in _logger_lock
+    logging._acquireLock()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'logging' has no attribute '_acquireLock'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/wxp878/miniconda3/bin/conda", line 13, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main.py", line 112, in main
+    return conda_exception_handler(main, *args, **kwargs)
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1432, in conda_exception_handler
+    return_value = exception_handler(func, *args, **kwargs)
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1135, in __call__
+    return self.handle_exception(exc_val, exc_tb)
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1175, in handle_exception
+    return self.handle_unexpected_exception(exc_val, exc_tb)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1186, in handle_unexpected_exception
+    self.print_unexpected_error_report(error_report)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1248, in print_unexpected_error_report
+    from .cli.main_info import get_env_vars_str, get_main_info_str
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main_info.py", line 15, in <module>
+    from ..core.index import _supplement_index_with_system
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/core/index.py", line 15, in <module>
+    from .package_cache_data import PackageCacheData
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/core/package_cache_data.py", line 22, in <module>
+    from .path_actions import CacheUrlAction, ExtractPackageAction
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/core/path_actions.py", line 28, in <module>
+    from ..gateways.connection.download import download
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/connection/download.py", line 12, in <module>
+    from .session import CondaSession
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/connection/session.py", line 9, in <module>
+    from .adapters.ftp import FTPAdapter
+  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/connection/adapters/ftp.py", line 21, in <module>
+    import cgi
+ModuleNotFoundError: No module named 'cgi'
+hendrixgpu17fl.unicph.domain
+cuda Devices
+0
+/home/wxp878/miniconda3/envs/uncertainty/lib/python3.10/site-packages/torch/cuda/__init__.py:188: UserWarning: CUDA initialization: The NVIDIA driver on your system is too old (found version 12080). Please update your GPU driver by downloading and installing a new version from the URL: http://www.nvidia.com/Download/index.aspx Alternatively, go to: https://pytorch.org to install a PyTorch version that has been compiled with your version of the CUDA driver. (Triggered internally at /__w/pytorch/pytorch/c10/cuda/CUDAFunctions.cpp:119.)
+  return torch._C._cuda_getDeviceCount() > 0
+cpu
+train:   0%|          | 0/592 [00:00<?, ?it/s]train:   0%|          | 1/592 [00:25<4:09:09, 25.29s/it]train:   0%|          | 2/592 [00:49<3:59:45, 24.38s/it]train:   1%|          | 3/592 [01:12<3:56:28, 24.09s/it]train:   1%|          | 4/592 [01:36<3:54:34, 23.94s/it]train:   1%|          | 5/592 [02:00<3:53:06, 23.83s/it]train:   1%|          | 6/592 [02:23<3:52:12, 23.78s/it]train:   1%|          | 7/592 [02:47<3:51:32, 23.75s/it]slurmstepd: error: *** JOB 7665 ON hendrixgpu17fl CANCELLED AT 2026-08-12T09:11:43 ***

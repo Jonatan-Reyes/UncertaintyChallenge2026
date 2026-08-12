@@ -1,0 +1,4 @@
+hendrixgpu10fl.unicph.domain
+cuda Devices
+0
+/var/spool/slurmd/job07405/slurm_script: line 20: /home/wxp878/.conda/envs/uncertainty/bin/python3: No such file or directory

@@ -1,0 +1,4 @@
+/var/spool/slurmd/job07375/slurm_script: line 8: activate: No such file or directory
+hendrixgpu09fl.unicph.domain
+0
+/home/wxp878/miniconda3/envs/uncertainty/bin/python: No module named train

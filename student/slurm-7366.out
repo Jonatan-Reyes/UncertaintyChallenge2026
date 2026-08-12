@@ -1,0 +1,4 @@
+/var/spool/slurmd/job07366/slurm_script: line 8: activate: No such file or directory
+hendrixgpu05fl.unicph.domain
+0
+/home/wxp878/miniconda3/envs/uncertainty/bin/python: Error while finding module specification for 'student.train' (ModuleNotFoundError: No module named 'student')

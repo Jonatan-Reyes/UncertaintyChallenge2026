@@ -1,0 +1,10 @@
+hendrixgpu09fl.unicph.domain
+0
+Traceback (most recent call last):
+  File "/home/wxp878/miniconda3/envs/uncertainty/lib/python3.10/runpy.py", line 196, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/wxp878/miniconda3/envs/uncertainty/lib/python3.10/runpy.py", line 86, in _run_code
+    exec(code, run_globals)
+  File "/home/wxp878/UncertaintyChallenge2026/student/train.py", line 30, in <module>
+    from student import metrics as M
+ModuleNotFoundError: No module named 'student'
