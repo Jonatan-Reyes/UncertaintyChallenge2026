@@ -106,7 +106,11 @@ class Trainer:
             member_logits = []
             for logits_k, criterion_k in zip(self.model.iter_member_logits(imgs), itertools.cycle(self.criteria)):
                 loss_k = criterion_k(logits_k, labels)
-                loss_k.backward()
+                # retain_graph: each backbone's heads share one embedding
+                # (Classifier.iter_member_logits computes it once per
+                # backbone), so backward() on the first head must not free
+                # that shared graph before the other head(s) backward through it.
+                loss_k.backward(retain_graph=True)
                 loss_sum += loss_k.item()
                 member_logits.append(logits_k.detach())
             self.optimizer.step()
