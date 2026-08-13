@@ -5,3 +5,16 @@ pandas
 numpy
 pillow
 tqdm
+gpustat
+# scoring in student/metrics.py is hand-rolled and sklearn-free on purpose
+# (bit-for-bit parity with the master evaluator); scikit-learn/lightgbm/xgboost
+# below are only for train_tree.py's tree-based baselines and exploratory notebooks.
+scikit-learn
+lightgbm
+xgboost
+# CLIP text tower for preprocessing/build_class_similarity.py (semantic class-similarity
+# soft labels); not needed at train/eval time, only to regenerate class_similarity.npy.
+open_clip_torch
+# 3D projection for preprocessing/inspect_class_embeddings.ipynb only.
+umap-learn
+plotly

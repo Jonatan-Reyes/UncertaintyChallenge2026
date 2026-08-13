@@ -24,7 +24,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from student.data import IWildCamChallengeDataset, default_eval_transform
+from student.data import IMG_SIZE, IWildCamChallengeDataset, default_eval_transform, resolve_norm
 from student.metrics import compute_all_metrics
 from student.model import DEFAULT_BACKBONE, Classifier
 
@@ -37,6 +37,8 @@ def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
         backbone_name=backbone_name,
         pooling=ckpt.get("pooling"),
         img_size=ckpt.get("img_size"),
+        num_heads=int(ckpt.get("num_heads", 1)),
+        lora=ckpt.get("lora"),
     )
     model.load_state_dict(ckpt["state_dict"])
     model.to(device).eval()
@@ -44,10 +46,12 @@ def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
 
 
 def eval_transform_for_checkpoint(ckpt_path: Path):
-    """Build the eval transform matching a checkpoint's training resolution."""
+    """Build the eval transform matching a checkpoint's training resolution
+    and its backbone's pretrained normalization."""
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    img_size = ckpt.get("img_size")
-    return default_eval_transform(img_size) if img_size is not None else default_eval_transform()
+    img_size = ckpt.get("img_size") or IMG_SIZE
+    mean, std = resolve_norm(ckpt.get("backbone", DEFAULT_BACKBONE))
+    return default_eval_transform(img_size, mean, std)
 
 
 def collect_predictions(
