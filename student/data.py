@@ -107,7 +107,7 @@ class IWildCamChallengeDataset(Dataset):
 
 def default_train_transform(img_size=IMG_SIZE):
     return transforms.Compose([
-        transforms.Resize((img_size, img_size)),
+        # transforms.Resize((img_size, img_size)),
         transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0), ratio=(0.9, 1.1)),
         transforms.RandomHorizontalFlip(),
         transforms.RandomRotation(20, fill=0),
