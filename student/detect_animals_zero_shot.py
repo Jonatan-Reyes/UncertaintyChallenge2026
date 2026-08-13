@@ -18,6 +18,7 @@ Example:
 from __future__ import annotations
 
 import argparse
+import inspect
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -112,27 +113,39 @@ class GroundingDinoAnimalDetector:
         """Handle small API differences between transformers releases."""
         if hasattr(self.processor, "post_process_grounded_object_detection"):
             post_process = self.processor.post_process_grounded_object_detection
-            try:
+            parameters = inspect.signature(post_process).parameters
+            confidence_kwargs = {
+                "text_threshold": self.text_threshold,
+                "target_sizes": target_sizes,
+            }
+            if "box_threshold" in parameters:
+                confidence_kwargs["box_threshold"] = self.box_threshold
+            else:
+                confidence_kwargs["threshold"] = self.box_threshold
+
+            if "input_ids" in parameters:
                 return post_process(
                     outputs,
                     input_ids=inputs.get("input_ids"),
-                    box_threshold=self.box_threshold,
-                    text_threshold=self.text_threshold,
-                    target_sizes=target_sizes,
+                    **confidence_kwargs,
                 )
-            except TypeError:
-                return post_process(
-                    outputs,
-                    inputs.get("input_ids"),
-                    box_threshold=self.box_threshold,
-                    text_threshold=self.text_threshold,
-                    target_sizes=target_sizes,
-                )
+            return post_process(
+                outputs,
+                inputs.get("input_ids"),
+                **confidence_kwargs,
+            )
 
         if hasattr(self.processor, "post_process_object_detection"):
+            post_process = self.processor.post_process_object_detection
+            parameters = inspect.signature(post_process).parameters
+            if "threshold" in parameters:
+                return post_process(
+                    outputs,
+                    threshold=self.box_threshold,
+                    target_sizes=target_sizes,
+                )
             return self.processor.post_process_object_detection(
                 outputs,
-                threshold=self.box_threshold,
                 target_sizes=target_sizes,
             )
 
