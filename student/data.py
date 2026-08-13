@@ -105,10 +105,10 @@ class IWildCamChallengeDataset(Dataset):
         return img, int(self.labels[idx])
 
 
-def default_train_transform(img_size=IMG_SIZE):
+def default_train_transform():
     return transforms.Compose([
-        # transforms.Resize((img_size, img_size)),
-        transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0), ratio=(0.9, 1.1)),
+        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.RandomResizedCrop(IMG_SIZE, scale=(0.8, 1.0), ratio=(0.9, 1.1)),
         transforms.RandomHorizontalFlip(),
         transforms.RandomRotation(20, fill=0),
         transforms.RandomAffine(
@@ -154,7 +154,7 @@ def get_dataloaders(
     img_size: int | tuple[int, int] = IMG_SIZE,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     """Return ``(train_loader, val_loader, test_loader)`` with sensible defaults."""
-    train_ds = IWildCamChallengeDataset(root, "train", default_train_transform(img_size))
+    train_ds = IWildCamChallengeDataset(root, "train", default_train_transform())
     val_ds = IWildCamChallengeDataset(root, "val", default_eval_transform(img_size))
     test_ds = IWildCamChallengeDataset(root, "test_public", default_eval_transform(img_size))
     return (
