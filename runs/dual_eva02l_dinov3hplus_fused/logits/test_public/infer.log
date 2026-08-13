@@ -1,0 +1,3 @@
+wrote runs/dual_eva02l_dinov3hplus_fused/logits/test_public/eval.npz (3927 rows, 57 classes)
+wrote runs/dual_eva02l_dinov3hplus_fused/logits/test_public/crop.npz (3927 rows, 57 classes)
+wrote runs/dual_eva02l_dinov3hplus_fused/logits/test_public/hflip.npz (3927 rows, 57 classes)
