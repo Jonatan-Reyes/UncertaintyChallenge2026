@@ -103,7 +103,13 @@ class Classifier(nn.Module):
         self.backbones = nn.ModuleList()
         self.head = nn.ModuleList()
         for name in self.backbone_names:
-            bb = timm.create_model(name, pretrained=pretrained, num_classes=0)
+            # ViT-family backbones (vit_*, eva*) hard-assert input resolution
+            # against their registered default (often not 224, e.g. DINOv2's
+            # is 518) unless created with dynamic_img_size=True, which lets
+            # them interpolate position embeddings for other sizes. ConvNeXt
+            # and other non-ViT architectures don't accept that kwarg.
+            extra_kwargs = {"dynamic_img_size": True} if name.startswith(("vit_", "eva")) else {}
+            bb = timm.create_model(name, pretrained=pretrained, num_classes=0, **extra_kwargs)
             for p in bb.parameters():
                 p.requires_grad = False
             _unfreeze_last_n_layers(bb, n=num_unfrozen_layers)
