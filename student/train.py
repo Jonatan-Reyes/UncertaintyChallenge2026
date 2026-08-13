@@ -35,7 +35,7 @@ from student.data import (
     default_eval_transform,
     default_train_transform,
 )
-from student.eval import evaluate_val_by_domain
+from student.eval import evaluate_val_by_domain, tta_predict
 from student.model import DEFAULT_BACKBONES, BrierLoss, Classifier, CombinedLoss, SoftECELoss
 from student.plotting import energy_score, plot_energy_ood_roc, plot_reliability_diagram
 
@@ -135,8 +135,7 @@ class Trainer:
         with torch.no_grad():
             for imgs, labels in self.val_loader:
                 imgs = imgs.to(self.device)
-                logits = self.model(imgs)
-                probs = torch.softmax(logits, dim=1)
+                probs = tta_predict(self.model, imgs)
                 probs_chunks.append(probs.cpu().numpy())
                 labels_chunks.append(np.asarray(labels))
                 if output_dir is not None:
@@ -279,7 +278,7 @@ def train(
     backbones: list[str] | None = None,
     pretrained: bool = False,
     num_unfrozen_layers: int = 2,
-    alpha: float = 0.5,
+    alpha: float = 1.0,
     early_stop_metric: str = "accuracy",
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -376,7 +375,7 @@ def main() -> None:
                         help="Initialize every backbone from timm's pretrained weights.")
     parser.add_argument("--num-unfrozen-layers", type=int, default=2,
                         help="Number of layers to unfreeze/fine-tune at the end of each backbone.")
-    parser.add_argument("--alpha", type=float, default=0.5,
+    parser.add_argument("--alpha", type=float, default=1.0,
                         help="Weight on each head's secondary calibration loss "
                              "(cross-entropy + alpha * Brier/ECE).")
     args = parser.parse_args()

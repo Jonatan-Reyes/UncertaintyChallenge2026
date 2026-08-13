@@ -27,5 +27,5 @@ echo $CUDA_VISIBLE_DEVICES
     --epochs 30 --batch-size 64 \
     --lr 1e-4 --head-lr 1e-3 \
     --num-unfrozen-layers 0 \
-    --alpha 0.5 \
+    --alpha 1.0 \
     --patience 3

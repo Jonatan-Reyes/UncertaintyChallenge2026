@@ -91,8 +91,11 @@ def default_train_transform() -> Callable:
         transforms.RandomHorizontalFlip(),
         transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3),
         transforms.RandomRotation(10),
+        transforms.RandomAutocontrast(p=0.3),
+        transforms.RandomEqualize(p=0.2),
         transforms.ToTensor(),
         transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+        transforms.RandomErasing(p=0.25),
     ])
 
 

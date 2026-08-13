@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+import torchvision.transforms.functional as TF
 from torch.utils.data import DataLoader
 
 from student.data import IWildCamChallengeDataset, default_eval_transform
@@ -45,18 +46,33 @@ def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, list]:
     return model, [float(t) for t in temperatures]
 
 
+def tta_predict(model: nn.Module, imgs: torch.Tensor, temperatures: list | None = None) -> torch.Tensor:
+    """Test-time augmentation: average softmax over several views (original,
+    flip, rotations, greyscale, solarize)."""
+    views = (
+        imgs,
+        torch.flip(imgs, dims=[3]),
+        TF.rotate(imgs, 15),
+        TF.rotate(imgs, -15),
+        TF.rgb_to_grayscale(imgs, num_output_channels=3),
+        TF.solarize(imgs, threshold=0.5),
+    )
+    probs = sum(torch.softmax(model(v, temperatures=temperatures), dim=1) for v in views)
+    return probs / len(views)
+
+
 def collect_predictions(
     model: nn.Module, loader: DataLoader, device, temperatures: list | None = None
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Run ``model`` over ``loader`` (with each backbone's own temperature
-    applied before combining, if given) and return ``(probs, labels)`` as np arrays."""
+    """Run ``model`` over ``loader`` (with TTA, and each backbone's own
+    temperature applied before combining, if given) and return
+    ``(probs, labels)`` as np arrays."""
     model.eval()
     all_probs, all_labels = [], []
     with torch.no_grad():
         for imgs, labels in loader:
             imgs = imgs.to(device)
-            logits = model(imgs, temperatures=temperatures)
-            probs = torch.softmax(logits, dim=1)
+            probs = tta_predict(model, imgs, temperatures)
             all_probs.append(probs.cpu().numpy())
             all_labels.append(np.asarray(labels))
     return np.concatenate(all_probs, axis=0), np.concatenate(all_labels, axis=0)
