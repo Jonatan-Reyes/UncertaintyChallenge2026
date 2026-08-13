@@ -29,11 +29,11 @@ import torch.nn as nn
 # image-modeling ViT (EVA-02) -- deliberately different architectures /
 # pretraining objectives, not 5 seeds of the same model.
 DEFAULT_BACKBONES = [
-    "vit_small_patch16_dinov3.lvd1689m",
-    "vit_small_patch14_dinov2.lvd142m",
-    "vit_base_patch16_siglip_224.webli",
-    "convnext_tiny.fb_in22k",
-    "eva02_small_patch14_224.mim_in22k",
+    "vit_base_patch16_dinov3.lvd1689m",
+    "vit_base_patch14_dinov2.lvd142m",
+    "vit_large_patch16_siglip_256.webli",
+    "convnext_base.fb_in22k",
+    "eva02_base_patch14_224.mim_in22k",
 ]
 
 
