@@ -21,8 +21,10 @@ echo $CUDA_VISIBLE_DEVICES
     --data-root challenge_data \
     --output-dir results \
     --pretrained \
-    --backbone vit_base_patch16_dinov3.lvd1689m \
-    --num-heads 4 --head-hidden-dim 256 --train-samples 1 --posterior-samples 5 \
+    --backbones vit_small_patch16_dinov3.lvd1689m vit_small_patch14_dinov2.lvd142m \
+                vit_base_patch16_siglip_224.webli convnext_tiny.fb_in22k \
+                eva02_small_patch14_224.mim_in22k \
     --epochs 30 --batch-size 32 \
-    --head-lr 1e-3 \
+    --lr 1e-4 --head-lr 1e-3 \
+    --num-unfrozen-layers 2 \
     --patience 3

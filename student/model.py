@@ -2,20 +2,19 @@
 
 Defines the ``Classifier`` nn.Module used by ``train``, ``eval``, and ``predict``.
 
-The backbone is a frozen, pretrained feature extractor. On top of it sit
-several independent small MLP heads, each meant to be trained with its own
-IVON optimizer (see ``train.py``) so it learns a posterior over its own
-weights instead of a point estimate. Averaging softmax predictions across
-heads gives ensemble-style calibrated uncertainty without adapting the
-(expensive) backbone per member — the backbone forward pass runs once per
-image and is shared by every head.
+An ensemble of 5 different pretrained foundation vision backbones (not 5
+copies of the same one) — each gets its own linear head, and predictions
+are combined by averaging softmax probabilities across the 5 models.
+Diversity comes from the backbones themselves (different architectures /
+pretraining objectives), not from LoRA adapters or posterior sampling. Most
+of each backbone is frozen; only its last 2 layers are fine-tuned alongside
+the head.
 
 The minimal contract (so train / eval / predict don't need to change):
 
-- ``self.head``    holds the per-member MLP heads (an ``nn.ModuleList``).
-- ``self.backbone`` is the frozen feature extractor.
-- ``forward(x)``   returns logits of shape ``(N, num_classes)``.
-- ``embed(x)``     returns features of shape ``(N, embed_dim)``.
+- ``self.head``      per-backbone linear heads (an ``nn.ModuleList``).
+- ``self.backbones``  the (mostly frozen) feature extractors (an ``nn.ModuleList``).
+- ``forward(x)``      returns logits of shape ``(N, num_classes)``.
 """
 
 from __future__ import annotations
@@ -24,64 +23,102 @@ import timm
 import torch
 import torch.nn as nn
 
-DEFAULT_BACKBONE = "vit_small_patch16_dinov3.lvd1689m"
+# 5 different foundation backbones: 2 self-supervised ViTs (DINOv3, DINOv2),
+# 1 vision-language contrastive model (SigLIP), 1 CNN (ConvNeXt), 1 masked-
+# image-modeling ViT (EVA-02) -- deliberately different architectures /
+# pretraining objectives, not 5 seeds of the same model.
+DEFAULT_BACKBONES = [
+    "vit_small_patch16_dinov3.lvd1689m",
+    "vit_small_patch14_dinov2.lvd142m",
+    "vit_base_patch16_siglip_224.webli",
+    "convnext_tiny.fb_in22k",
+    "eva02_small_patch14_224.mim_in22k",
+]
+
+
+def _unfreeze_last_n_layers(backbone: nn.Module, n: int = 2) -> None:
+    """Unfreeze the last ``n`` layers of a timm backbone, plus its final
+    norm if present.
+
+    Looks for the common ``.blocks`` (ViT-style: DINOv3/DINOv2/SigLIP/EVA-02)
+    or ``.stages`` (ConvNeXt-style) attribute for a reasonable notion of
+    "layer" across architectures; falls back to the backbone's last ``n``
+    top-level children otherwise.
+    """
+    if hasattr(backbone, "blocks"):
+        layers = list(backbone.blocks)
+    elif hasattr(backbone, "stages"):
+        layers = list(backbone.stages)
+    else:
+        layers = list(backbone.children())
+
+    for layer in layers[-n:]:
+        for p in layer.parameters():
+            p.requires_grad = True
+
+    if hasattr(backbone, "norm") and isinstance(backbone.norm, nn.Module):
+        for p in backbone.norm.parameters():
+            p.requires_grad = True
+
+
+class BrierLoss(nn.Module):
+    """Brier score as a differentiable loss: mean_i sum_k (p_ik - onehot_ik)^2.
+
+    Unlike ECE, Brier is already a smooth quadratic function of the
+    probabilities, so this matches ``metrics.brier()`` exactly rather than
+    needing a soft approximation — usable directly as an LBFGS objective
+    (e.g. for temperature scaling).
+    """
+
+    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        probs = torch.softmax(logits, dim=1)
+        onehot = torch.zeros_like(probs)
+        onehot.scatter_(1, labels.unsqueeze(1), 1.0)
+        return ((probs - onehot) ** 2).sum(dim=1).mean()
 
 
 class Classifier(nn.Module):
-    """Frozen timm backbone (feature extractor) + several independent MLP heads.
+    """Ensemble of foundation backbones, each with its own linear head.
 
-    The backbone is created via ``timm.create_model(..., num_classes=0)``,
-    which returns pooled features rather than logits, and is always frozen
-    (``requires_grad=False``) — ``embed`` runs it under ``torch.no_grad()``,
-    since the point of this design is that IVON's per-step Monte Carlo
-    sampling only has to touch the small heads, not the backbone.
-
-    ``forward`` computes the shared embedding once, runs every head on it,
-    and returns the log of the probability-space average across heads (see
-    ``forward_members`` for the raw per-head logits, e.g. for ensemble
-    disagreement / energy-based uncertainty).
+    Every backbone is created via ``timm.create_model(..., num_classes=0)``
+    (pooled features). All backbone parameters start frozen
+    (``requires_grad=False``), then ``_unfreeze_last_n_layers`` re-enables
+    gradients on just the last 2 layers of each — the rest stays fixed.
+    Backbones have different ``embed_dim``s, so each gets its own
+    appropriately-sized head rather than sharing one.
     """
 
     def __init__(
         self,
         num_classes: int,
-        backbone_name: str = DEFAULT_BACKBONE,
+        backbone_names: list[str] | None = None,
         pretrained: bool = False,
-        num_heads: int = 4,
-        head_hidden_dim: int = 256,
+        num_unfrozen_layers: int = 2,
     ):
         super().__init__()
-        self.backbone = timm.create_model(
-            backbone_name, pretrained=pretrained, num_classes=0
-        )
-        self.backbone_name = backbone_name
-        self.embed_dim = int(self.backbone.num_features)
+        self.backbone_names = list(backbone_names) if backbone_names else list(DEFAULT_BACKBONES)
         self.num_classes = int(num_classes)
-        self.num_members = int(num_heads)
+        self.num_members = len(self.backbone_names)
 
-        for p in self.backbone.parameters():
-            p.requires_grad = False
-
-        self.head = nn.ModuleList(
-            nn.Sequential(
-                nn.Linear(self.embed_dim, head_hidden_dim),
-                nn.ReLU(),
-                nn.Linear(head_hidden_dim, self.num_classes),
-            )
-            for _ in range(self.num_members)
-        )
-
-    def embed(self, x: torch.Tensor) -> torch.Tensor:
-        """Per-sample feature vectors, shape ``(N, embed_dim)``, from the frozen backbone."""
-        self.backbone.eval()
-        with torch.no_grad():
-            return self.backbone(x)
+        self.backbones = nn.ModuleList()
+        self.head = nn.ModuleList()
+        for name in self.backbone_names:
+            bb = timm.create_model(name, pretrained=pretrained, num_classes=0)
+            for p in bb.parameters():
+                p.requires_grad = False
+            _unfreeze_last_n_layers(bb, n=num_unfrozen_layers)
+            self.backbones.append(bb)
+            self.head.append(nn.Linear(int(bb.num_features), self.num_classes))
 
     def iter_member_logits(self, x: torch.Tensor):
-        """Yield each head's logits, computing the shared backbone embedding once."""
-        feats = self.embed(x)
-        for head in self.head:
-            yield head(feats)
+        """Yield each backbone+head's logits one at a time.
+
+        No ``torch.no_grad()`` here — unlike a fully-frozen backbone, the
+        last few unfrozen layers need gradients to flow through.
+        """
+        for bb, head in zip(self.backbones, self.head):
+            feat = bb(x)
+            yield head(feat)
 
     def forward_members(self, x: torch.Tensor) -> torch.Tensor:
         """Per-member logits, shape ``(num_members, N, num_classes)``."""
@@ -90,7 +127,7 @@ class Classifier(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Log of the probability-space ensemble average, shape ``(N, num_classes)``.
 
-        Averaging each head's softmax (rather than its raw logits) is the
+        Averaging each member's softmax (rather than its raw logits) is the
         standard deep-ensemble combination rule and calibrates better.
         Returning ``log(mean_k softmax(logits_k))`` keeps the
         ``forward(x) -> logits`` contract intact: since the averaged

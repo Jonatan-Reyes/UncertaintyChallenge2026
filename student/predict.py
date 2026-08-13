@@ -23,23 +23,23 @@ import torch
 from torch.utils.data import DataLoader
 
 from student.data import IWildCamChallengeDataset, default_eval_transform
-from student.eval import ivon_predict, load_checkpoint
+from student.eval import load_checkpoint
 
 DEFAULT_SPLITS: tuple[str, ...] = ("test_public", "test_private")
 
 
 def collect_test_predictions(
-    model, optimizers: list, loader: DataLoader, device,
-    temperature: float = 1.0, n_samples: int = 5,
+    model, loader: DataLoader, device, temperature: float = 1.0
 ) -> tuple[list[str], np.ndarray]:
-    """Run model (with IVON posterior sampling) on the loader; return (uids in batch order, probs as np array)."""
+    """Run model on the loader; return (uids in batch order, probs as np array)."""
     model.eval()
     uids: list[str] = []
     probs_chunks: list[np.ndarray] = []
     with torch.no_grad():
         for imgs, batch_uids in loader:
             imgs = imgs.to(device)
-            probs = ivon_predict(model, optimizers, imgs, n_samples, temperature)
+            logits = model(imgs)
+            probs = torch.softmax(logits / temperature, dim=1)
             probs_chunks.append(probs.cpu().numpy())
             uids.extend(batch_uids)
     return uids, np.concatenate(probs_chunks, axis=0)
@@ -61,19 +61,16 @@ def predict(
     batch_size: int = 32,
     num_workers: int = 4,
     splits: tuple[str, ...] = DEFAULT_SPLITS,
-    posterior_samples: int = 5,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, optimizers, T = load_checkpoint(checkpoint, device)
+    model, T = load_checkpoint(checkpoint, device)
 
     all_uids: list[str] = []
     all_probs: list[np.ndarray] = []
     for split in splits:
         ds = IWildCamChallengeDataset(data_root, split, default_eval_transform())
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-        uids, probs = collect_test_predictions(
-            model, optimizers, loader, device, temperature=T, n_samples=posterior_samples,
-        )
+        uids, probs = collect_test_predictions(model, loader, device, temperature=T)
         all_uids.extend(uids)
         all_probs.append(probs)
 
@@ -91,15 +88,13 @@ def main() -> None:
                         help="Where to write submission.csv")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--posterior-samples", type=int, default=5,
-                        help="IVON posterior weight samples drawn per head.")
     parser.add_argument("--splits", nargs="+", default=list(DEFAULT_SPLITS),
                         help="Test splits to predict on (default: test_public test_private).")
     args = parser.parse_args()
     predict(
         checkpoint=args.checkpoint, data_root=args.data_root, output=args.output,
         batch_size=args.batch_size, num_workers=args.num_workers,
-        splits=tuple(args.splits), posterior_samples=args.posterior_samples,
+        splits=tuple(args.splits),
     )
 
 

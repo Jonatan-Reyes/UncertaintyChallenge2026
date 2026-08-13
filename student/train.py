@@ -1,4 +1,5 @@
-"""IVON-headed trainer with early stopping and post-hoc temperature scaling.
+"""Trainer for a 5-foundation-model ensemble, with early stopping and
+post-hoc temperature scaling.
 
 Two checkpoints are written:
 
@@ -20,7 +21,6 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-import ivon
 import numpy as np
 import torch
 import torch.nn as nn
@@ -34,19 +34,22 @@ from student.data import (
     default_eval_transform,
     default_train_transform,
 )
-from student.eval import evaluate_val_by_domain, ivon_predict
-from student.model import DEFAULT_BACKBONE, Classifier
+from student.eval import evaluate_val_by_domain
+from student.model import DEFAULT_BACKBONES, BrierLoss, Classifier
 from student.plotting import energy_score, plot_energy_ood_roc, plot_reliability_diagram
 
 
-def make_optimizers(model: Classifier, lr: float, weight_decay: float, ess: float) -> list:
-    """One IVON optimizer per head — each head learns its own independent
-    posterior, trained on its own loss (the backbone is frozen and has no
-    optimizer at all)."""
-    return [
-        ivon.IVON(head.parameters(), lr=lr, ess=ess, weight_decay=weight_decay)
-        for head in model.head
-    ]
+def make_optimizer(
+    model: Classifier, lr_backbone: float, lr_head: float, weight_decay: float
+) -> optim.Optimizer:
+    """AdamW with two param groups: each backbone's unfrozen last-2-layers
+    (lower ``lr_backbone``, since they're pretrained) and the heads (higher
+    ``lr_head``, freshly initialized)."""
+    backbone_params = [p for bb in model.backbones for p in bb.parameters() if p.requires_grad]
+    return optim.AdamW([
+        {"params": backbone_params, "lr": lr_backbone, "weight_decay": weight_decay},
+        {"params": model.head.parameters(), "lr": lr_head, "weight_decay": weight_decay},
+    ])
 
 
 HIGHER_IS_BETTER_METRICS: frozenset[str] = frozenset({"accuracy"})
@@ -57,13 +60,11 @@ class Trainer:
     model: nn.Module
     train_loader: DataLoader
     val_loader: DataLoader
-    optimizers: list  # one IVON optimizer per head
+    optimizer: optim.Optimizer
     criterion: nn.Module
     device: torch.device
     patience: int = 3
     early_stop_metric: str = "accuracy"
-    train_samples: int = 1  # Monte Carlo weight samples per IVON step
-    posterior_samples: int = 5  # posterior draws per head at eval time
 
     def __post_init__(self) -> None:
         if self.early_stop_metric in HIGHER_IS_BETTER_METRICS:
@@ -71,7 +72,6 @@ class Trainer:
         else:
             self.best_val_metric = float("inf")
         self.best_state_dict: dict | None = None
-        self.best_optimizer_states: list | None = None
         self.epochs_no_improve: int = 0
 
     def _is_improved(self, value: float) -> bool:
@@ -80,10 +80,15 @@ class Trainer:
         return value < self.best_val_metric
 
     def train_epoch(self) -> tuple[float, float]:
-        """The backbone embedding is computed once per batch (frozen, shared
-        across heads); each head is then trained independently — its own
-        cross-entropy loss, its own IVON optimizer — using ``train_samples``
-        Monte Carlo weight draws per step to estimate IVON's gradient.
+        """Each member (backbone+head) is trained on its own cross-entropy
+        loss, not on the loss of their averaged prediction — so members fit
+        the data independently instead of being pulled toward agreement.
+        Each member's loss is backpropagated immediately (gradients
+        accumulate across the 5 ``backward()`` calls before one
+        ``optimizer.step()``), so only one member's activations are ever in
+        memory at once. Gradients land on that member's linear head and its
+        backbone's unfrozen last-2-layers; the rest of each backbone stays
+        fixed.
         """
         self.model.train()
         total_loss = 0.0
@@ -92,22 +97,15 @@ class Trainer:
         for imgs, labels in tqdm(self.train_loader, desc="train", leave=False):
             imgs = imgs.to(self.device)
             labels = labels.to(self.device)
-            feats = self.model.embed(imgs)
+            self.optimizer.zero_grad()
             loss_sum = 0.0
             member_logits = []
-            for head, optimizer in zip(self.model.head, self.optimizers):
-                optimizer.zero_grad()
-                head_loss = 0.0
-                for _ in range(self.train_samples):
-                    with optimizer.sampled_params(train=True):
-                        logits_k = head(feats)
-                        loss_k = self.criterion(logits_k, labels) / self.train_samples
-                        loss_k.backward()
-                        head_loss += loss_k.item()
-                optimizer.step()
-                loss_sum += head_loss
-                with torch.no_grad():
-                    member_logits.append(head(feats).detach())
+            for logits_k in self.model.iter_member_logits(imgs):
+                loss_k = self.criterion(logits_k, labels)
+                loss_k.backward()
+                loss_sum += loss_k.item()
+                member_logits.append(logits_k.detach())
+            self.optimizer.step()
             ensemble_logits = torch.stack(member_logits, dim=0).mean(dim=0)
             total_loss += (loss_sum / len(member_logits)) * imgs.size(0)
             total_correct += int((ensemble_logits.argmax(dim=1) == labels).sum().item())
@@ -129,7 +127,8 @@ class Trainer:
         with torch.no_grad():
             for imgs, labels in self.val_loader:
                 imgs = imgs.to(self.device)
-                probs = ivon_predict(self.model, self.optimizers, imgs, n_samples=self.posterior_samples)
+                logits = self.model(imgs)
+                probs = torch.softmax(logits, dim=1)
                 probs_chunks.append(probs.cpu().numpy())
                 labels_chunks.append(np.asarray(labels))
                 if output_dir is not None:
@@ -153,6 +152,7 @@ class Trainer:
                 "nll": M.nll(probs[mask], labels[mask]),
                 "accuracy": M.accuracy(probs[mask], labels[mask]),
                 "brier": M.brier(probs[mask], labels[mask]),
+                "ece": M.ece(probs[mask], labels[mask]),
             }
 
         return {
@@ -168,17 +168,16 @@ class Trainer:
             print(
                 f"epoch {epoch:3d} | train_loss={train_loss:.4f} train_acc={train_acc:.4f} | "
                 f"val_nll={val['overall']['nll']:.4f} val_acc={val['overall']['accuracy']:.4f} "
-                f"val_brier={val['overall']['brier']:.4f} | "
+                f"val_brier={val['overall']['brier']:.4f} val_ece={val['overall']['ece']:.4f} | "
                 f"id_acc={val['id']['accuracy']:.4f} id_nll={val['id']['nll']:.4f} "
-                f"id_brier={val['id']['brier']:.4f} | "
+                f"id_brier={val['id']['brier']:.4f} id_ece={val['id']['ece']:.4f} | "
                 f"ood_acc={val['ood']['accuracy']:.4f} ood_nll={val['ood']['nll']:.4f} "
-                f"ood_brier={val['ood']['brier']:.4f}"
+                f"ood_brier={val['ood']['brier']:.4f} ood_ece={val['ood']['ece']:.4f}"
             )
             current = val["overall"][self.early_stop_metric]
             if self._is_improved(current):
                 self.best_val_metric = current
                 self.best_state_dict = copy.deepcopy(self.model.state_dict())
-                self.best_optimizer_states = [copy.deepcopy(opt.state_dict()) for opt in self.optimizers]
                 self.epochs_no_improve = 0
             else:
                 self.epochs_no_improve += 1
@@ -188,13 +187,10 @@ class Trainer:
                     break
 
             if output_dir is not None:
-                save_checkpoint(self.model, self.model.num_classes, 1.0, Path(output_dir) / "model.pt",
-                                 optimizers=self.optimizers)
+                save_checkpoint(self.model, self.model.num_classes, 1.0, Path(output_dir) / "model.pt")
 
         if self.best_state_dict is not None:
             self.model.load_state_dict(self.best_state_dict)
-            for optimizer, state in zip(self.optimizers, self.best_optimizer_states):
-                optimizer.load_state_dict(state)
 
 
 def fit_temperature(logits: torch.Tensor, labels: torch.Tensor) -> float:
@@ -206,7 +202,7 @@ def fit_temperature(logits: torch.Tensor, labels: torch.Tensor) -> float:
     """
     log_T = nn.Parameter(torch.zeros(1, device=logits.device))
     optimizer = optim.LBFGS([log_T], lr=0.1, max_iter=100)
-    criterion = nn.CrossEntropyLoss()
+    criterion = BrierLoss()
 
     def closure():
         optimizer.zero_grad()
@@ -239,21 +235,15 @@ def save_checkpoint(
     temperature: float,
     path: Path,
     hyperparameters: dict | None = None,
-    optimizers: list | None = None,
 ) -> None:
     ckpt = {
         "state_dict": model.state_dict(),
         "num_classes": int(num_classes),
         "temperature": float(temperature),
-        "backbone": getattr(model, "backbone_name", DEFAULT_BACKBONE),
+        "backbone_names": getattr(model, "backbone_names", DEFAULT_BACKBONES),
     }
     if hyperparameters is not None:
         ckpt["hyperparameters"] = dict(hyperparameters)
-    if optimizers is not None:
-        # Per-head IVON posterior state — needed to sample at inference time
-        # in a separate process (predict.py/eval.py), where the live
-        # optimizer objects from training don't exist.
-        ckpt["optimizer_states"] = [opt.state_dict() for opt in optimizers]
     torch.save(ckpt, path)
 
 
@@ -262,22 +252,38 @@ def train(
     output_dir: Path,
     epochs: int = 30,
     batch_size: int = 32,
+    lr: float = 1e-4,
     head_lr: float = 1e-3,
     weight_decay: float = 1e-4,
     patience: int = 3,
     num_workers: int = 4,
-    backbone: str = DEFAULT_BACKBONE,
+    backbones: list[str] | None = None,
     pretrained: bool = False,
-    num_heads: int = 4,
-    head_hidden_dim: int = 256,
-    train_samples: int = 1,
-    posterior_samples: int = 5,
+    num_unfrozen_layers: int = 2,
     early_stop_metric: str = "accuracy",
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     print(device)
+
+    backbones = list(backbones) if backbones else list(DEFAULT_BACKBONES)
+
+    hparams = {
+        "epochs": int(epochs),
+        "batch_size": int(batch_size),
+        "lr": float(lr),
+        "head_lr": float(head_lr),
+        "weight_decay": float(weight_decay),
+        "patience": int(patience),
+        "num_workers": int(num_workers),
+        "backbones": backbones,
+        "pretrained": bool(pretrained),
+        "num_unfrozen_layers": int(num_unfrozen_layers),
+        "early_stop_metric": str(early_stop_metric),
+        "data_root": str(data_root),
+    }
+    (output_dir / "config.json").write_text(json.dumps(hparams, indent=2))
 
     train_ds = IWildCamChallengeDataset(data_root, "train", default_train_transform())
     val_ds = IWildCamChallengeDataset(data_root, "val", default_eval_transform())
@@ -286,67 +292,47 @@ def train(
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False,
                             num_workers=num_workers)
 
-    hparams = {
-        "epochs": int(epochs),
-        "batch_size": int(batch_size),
-        "head_lr": float(head_lr),
-        "weight_decay": float(weight_decay),
-        "ess": int(len(train_ds)),
-        "patience": int(patience),
-        "num_workers": int(num_workers),
-        "backbone": str(backbone),
-        "pretrained": bool(pretrained),
-        "num_heads": int(num_heads),
-        "head_hidden_dim": int(head_hidden_dim),
-        "train_samples": int(train_samples),
-        "posterior_samples": int(posterior_samples),
-        "early_stop_metric": str(early_stop_metric),
-        "data_root": str(data_root),
-    }
-    (output_dir / "config.json").write_text(json.dumps(hparams, indent=2))
-
     model = Classifier(
-        train_ds.num_classes, backbone_name=backbone, pretrained=pretrained,
-        num_heads=num_heads, head_hidden_dim=head_hidden_dim,
+        train_ds.num_classes, backbone_names=backbones, pretrained=pretrained,
+        num_unfrozen_layers=num_unfrozen_layers,
     ).to(device)
-    optimizers = make_optimizers(model, lr=head_lr, weight_decay=weight_decay, ess=len(train_ds))
+    optimizer = make_optimizer(model, lr_backbone=lr, lr_head=head_lr, weight_decay=weight_decay)
     criterion = nn.CrossEntropyLoss()
 
     trainer = Trainer(
         model=model, train_loader=train_loader, val_loader=val_loader,
-        optimizers=optimizers, criterion=criterion, device=device,
+        optimizer=optimizer, criterion=criterion, device=device,
         patience=patience, early_stop_metric=early_stop_metric,
-        train_samples=train_samples, posterior_samples=posterior_samples,
     )
     trainer.fit(epochs, output_dir=output_dir)
 
-    save_checkpoint(model, train_ds.num_classes, 1.0, output_dir / "model.pt",
-                     hyperparameters=hparams, optimizers=optimizers)
+    save_checkpoint(model, train_ds.num_classes, 1.0, output_dir / "model.pt", hyperparameters=hparams)
     print("saved model.pt")
 
     T = temperature_scale(model, val_loader, device)
-    save_checkpoint(model, train_ds.num_classes, T, output_dir / "model_temp_scaled.pt",
-                     hyperparameters=hparams, optimizers=optimizers)
+    save_checkpoint(model, train_ds.num_classes, T, output_dir / "model_temp_scaled.pt", hyperparameters=hparams)
     print(f"learned T={T:.4f} → saved model_temp_scaled.pt")
 
     val_metrics = evaluate_val_by_domain(
-        model, optimizers, val_ds, device, T, batch_size=batch_size, num_workers=num_workers,
-        n_samples=posterior_samples, output_dir=output_dir,
+        model, val_ds, device, T, batch_size=batch_size, num_workers=num_workers,
+        output_dir=output_dir,
     )
     (output_dir / "val_metrics.json").write_text(json.dumps(val_metrics, indent=2))
     print(f"wrote {output_dir / 'val_metrics.json'}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train a frozen-backbone, IVON-headed classifier.")
+    parser = argparse.ArgumentParser(description="Train a 5-foundation-model ensemble.")
     parser.add_argument("--data-root", type=Path, required=True,
                         help="Path to challenge_data/")
     parser.add_argument("--output-dir", type=Path, required=True,
                         help="Where to save model.pt and model_temp_scaled.pt")
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--lr", type=float, default=1e-4,
+                        help="Learning rate for each backbone's unfrozen last-2-layers.")
     parser.add_argument("--head-lr", type=float, default=1e-3,
-                        help="IVON learning rate for the heads (the backbone is always frozen).")
+                        help="Learning rate for the linear heads.")
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--patience", type=int, default=3,
                         help="Early-stop after this many epochs without val-metric improvement.")
@@ -355,18 +341,12 @@ def main() -> None:
                         help="Which val metric drives early stopping. Default is "
                              "accuracy: we teach accuracy-first, calibration-second.")
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--backbone", type=str, default=DEFAULT_BACKBONE,
-                        help="timm model id (e.g. resnet50, resnet18, convnext_small, vit_base_patch16_224).")
+    parser.add_argument("--backbones", type=str, nargs="+", default=list(DEFAULT_BACKBONES),
+                        help="timm model ids, one per ensemble member (default: 5 different foundation models).")
     parser.add_argument("--pretrained", action="store_true",
-                        help="Initialize the backbone from timm's pretrained weights.")
-    parser.add_argument("--num-heads", type=int, default=4,
-                        help="Ensemble size: number of independent IVON-trained MLP heads.")
-    parser.add_argument("--head-hidden-dim", type=int, default=256,
-                        help="Hidden width of each head's MLP.")
-    parser.add_argument("--train-samples", type=int, default=1,
-                        help="Monte Carlo weight samples per IVON optimizer step.")
-    parser.add_argument("--posterior-samples", type=int, default=5,
-                        help="IVON posterior weight samples drawn per head at eval time.")
+                        help="Initialize every backbone from timm's pretrained weights.")
+    parser.add_argument("--num-unfrozen-layers", type=int, default=2,
+                        help="Number of layers to unfreeze/fine-tune at the end of each backbone.")
     args = parser.parse_args()
     train(**vars(args))
 
