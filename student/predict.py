@@ -29,17 +29,18 @@ DEFAULT_SPLITS: tuple[str, ...] = ("test_public", "test_private")
 
 
 def collect_test_predictions(
-    model, loader: DataLoader, device, temperature: float = 1.0
+    model, loader: DataLoader, device, temperatures: list | None = None
 ) -> tuple[list[str], np.ndarray]:
-    """Run model on the loader; return (uids in batch order, probs as np array)."""
+    """Run model (each backbone's own temperature applied before combining,
+    if given) on the loader; return (uids in batch order, probs as np array)."""
     model.eval()
     uids: list[str] = []
     probs_chunks: list[np.ndarray] = []
     with torch.no_grad():
         for imgs, batch_uids in loader:
             imgs = imgs.to(device)
-            logits = model(imgs)
-            probs = torch.softmax(logits / temperature, dim=1)
+            logits = model(imgs, temperatures=temperatures)
+            probs = torch.softmax(logits, dim=1)
             probs_chunks.append(probs.cpu().numpy())
             uids.extend(batch_uids)
     return uids, np.concatenate(probs_chunks, axis=0)
@@ -63,20 +64,21 @@ def predict(
     splits: tuple[str, ...] = DEFAULT_SPLITS,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, T = load_checkpoint(checkpoint, device)
+    model, temperatures = load_checkpoint(checkpoint, device)
 
     all_uids: list[str] = []
     all_probs: list[np.ndarray] = []
     for split in splits:
         ds = IWildCamChallengeDataset(data_root, split, default_eval_transform())
         loader = DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-        uids, probs = collect_test_predictions(model, loader, device, temperature=T)
+        uids, probs = collect_test_predictions(model, loader, device, temperatures=temperatures)
         all_uids.extend(uids)
         all_probs.append(probs)
 
     probs = np.concatenate(all_probs, axis=0)
     write_submission(all_uids, probs, output)
-    print(f"wrote {output} ({len(all_uids)} rows, {probs.shape[1]} classes, T={T:.4f})")
+    print(f"wrote {output} ({len(all_uids)} rows, {probs.shape[1]} classes, "
+          f"temperatures={[round(t, 4) for t in temperatures]})")
 
 
 def main() -> None:

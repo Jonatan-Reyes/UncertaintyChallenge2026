@@ -8,8 +8,8 @@ Checkpoint format expected from ``student.train``::
     torch.save({
         "state_dict":     model.state_dict(),
         "num_classes":    K,
-        "temperature":    T,            # 1.0 means no scaling
-        "backbone_names": [...],        # timm model id per ensemble member
+        "temperatures":   [T_0, ..., T_4],  # one per backbone, 1.0 means no scaling
+        "backbone_names": [...],            # timm model id per ensemble member
     }, path)
 """
 
@@ -30,7 +30,7 @@ from student.model import DEFAULT_BACKBONES, Classifier
 from student.plotting import energy_score, plot_energy_ood_roc, plot_reliability_diagram
 
 
-def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
+def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, list]:
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     backbone_names = ckpt.get("backbone_names", DEFAULT_BACKBONES)
     hparams = ckpt.get("hyperparameters", {})
@@ -41,29 +41,31 @@ def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
     )
     model.load_state_dict(ckpt["state_dict"])
     model.to(device).eval()
-    return model, float(ckpt.get("temperature", 1.0))
+    temperatures = ckpt.get("temperatures", [1.0] * len(backbone_names))
+    return model, [float(t) for t in temperatures]
 
 
 def collect_predictions(
-    model: nn.Module, loader: DataLoader, device, temperature: float = 1.0
+    model: nn.Module, loader: DataLoader, device, temperatures: list | None = None
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Run ``model`` over ``loader`` and return ``(probs, labels)`` as np arrays."""
+    """Run ``model`` over ``loader`` (with each backbone's own temperature
+    applied before combining, if given) and return ``(probs, labels)`` as np arrays."""
     model.eval()
     all_probs, all_labels = [], []
     with torch.no_grad():
         for imgs, labels in loader:
             imgs = imgs.to(device)
-            logits = model(imgs)
-            probs = torch.softmax(logits / temperature, dim=1)
+            logits = model(imgs, temperatures=temperatures)
+            probs = torch.softmax(logits, dim=1)
             all_probs.append(probs.cpu().numpy())
             all_labels.append(np.asarray(labels))
     return np.concatenate(all_probs, axis=0), np.concatenate(all_labels, axis=0)
 
 
 def evaluate(
-    model: nn.Module, loader: DataLoader, device, temperature: float = 1.0
+    model: nn.Module, loader: DataLoader, device, temperatures: list | None = None
 ) -> dict:
-    probs, labels = collect_predictions(model, loader, device, temperature)
+    probs, labels = collect_predictions(model, loader, device, temperatures)
     return compute_all_metrics(probs, labels)
 
 
@@ -86,7 +88,7 @@ def collect_energy(model: nn.Module, loader: DataLoader, device) -> np.ndarray:
 
 def evaluate_val_by_domain(
     model: nn.Module, val_ds: IWildCamChallengeDataset, device,
-    temperature: float = 1.0, batch_size: int = 32, num_workers: int = 4,
+    temperatures: list | None = None, batch_size: int = 32, num_workers: int = 4,
     output_dir: Path | None = None,
 ) -> dict:
     """Evaluate the val split as a whole, plus split by domain (id vs. ood).
@@ -95,7 +97,7 @@ def evaluate_val_by_domain(
     energy-based OOD-detection ROC curve (id vs. ood) to ``output_dir``.
     """
     loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    probs, labels = collect_predictions(model, loader, device, temperature)
+    probs, labels = collect_predictions(model, loader, device, temperatures)
 
     domains = np.asarray(val_ds.domains)
     id_mask = domains == "id"
@@ -127,10 +129,10 @@ def main() -> None:
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, temperature = load_checkpoint(args.checkpoint, device)
+    model, temperatures = load_checkpoint(args.checkpoint, device)
     val_ds = IWildCamChallengeDataset(args.data_root, "val", default_eval_transform())
     metrics = evaluate_val_by_domain(
-        model, val_ds, device, temperature,
+        model, val_ds, device, temperatures,
         batch_size=args.batch_size, num_workers=args.num_workers,
         output_dir=args.output_dir,
     )

@@ -225,29 +225,39 @@ def fit_temperature(logits: torch.Tensor, labels: torch.Tensor) -> float:
     return T
 
 
-def temperature_scale(model: nn.Module, val_loader: DataLoader, device) -> float:
-    """Collect val logits, then fit a single scalar T against NLL."""
+def temperature_scale_per_backbone(model: Classifier, val_loader: DataLoader, device) -> list[float]:
+    """Fit one independent temperature per backbone — each against its own
+    combined-over-heads logits and the true labels — rather than one shared
+    scalar fit on the already-cross-backbone-averaged output."""
     model.eval()
-    logits_list, labels_list = [], []
+    num_backbones = len(model.backbones)
+    logits_per_backbone: list[list[torch.Tensor]] = [[] for _ in range(num_backbones)]
+    labels_list = []
     with torch.no_grad():
         for imgs, labels in val_loader:
             imgs = imgs.to(device)
-            logits_list.append(model(imgs))
+            per_backbone = model.forward_per_backbone(imgs)  # (num_backbones, N, C)
+            for i in range(num_backbones):
+                logits_per_backbone[i].append(per_backbone[i])
             labels_list.append(labels.to(device))
-    return fit_temperature(torch.cat(logits_list), torch.cat(labels_list))
+    labels_cat = torch.cat(labels_list)
+    return [
+        fit_temperature(torch.cat(logits_i), labels_cat)
+        for logits_i in logits_per_backbone
+    ]
 
 
 def save_checkpoint(
     model: nn.Module,
     num_classes: int,
-    temperature: float,
+    temperatures: list[float],
     path: Path,
     hyperparameters: dict | None = None,
 ) -> None:
     ckpt = {
         "state_dict": model.state_dict(),
         "num_classes": int(num_classes),
-        "temperature": float(temperature),
+        "temperatures": [float(t) for t in temperatures],
         "backbone_names": getattr(model, "backbone_names", DEFAULT_BACKBONES),
     }
     if hyperparameters is not None:
@@ -322,15 +332,17 @@ def train(
     )
     trainer.fit(epochs, output_dir=output_dir)
 
-    save_checkpoint(model, train_ds.num_classes, 1.0, output_dir / "model.pt", hyperparameters=hparams)
+    save_checkpoint(model, train_ds.num_classes, [1.0] * len(model.backbones),
+                     output_dir / "model.pt", hyperparameters=hparams)
     print("saved model.pt")
 
-    T = temperature_scale(model, val_loader, device)
-    save_checkpoint(model, train_ds.num_classes, T, output_dir / "model_temp_scaled.pt", hyperparameters=hparams)
-    print(f"learned T={T:.4f} → saved model_temp_scaled.pt")
+    temperatures = temperature_scale_per_backbone(model, val_loader, device)
+    save_checkpoint(model, train_ds.num_classes, temperatures, output_dir / "model_temp_scaled.pt",
+                     hyperparameters=hparams)
+    print(f"learned temperatures={[round(t, 4) for t in temperatures]} → saved model_temp_scaled.pt")
 
     val_metrics = evaluate_val_by_domain(
-        model, val_ds, device, T, batch_size=batch_size, num_workers=num_workers,
+        model, val_ds, device, temperatures, batch_size=batch_size, num_workers=num_workers,
         output_dir=output_dir,
     )
     (output_dir / "val_metrics.json").write_text(json.dumps(val_metrics, indent=2))

@@ -57,11 +57,11 @@ def _unfreeze_last_n_layers(backbone: nn.Module, n: int = 2) -> None:
     else:
         layers = list(backbone.children())
 
-    for layer in layers[-n:]:
+    for layer in (layers[-n:] if n > 0 else []):
         for p in layer.parameters():
             p.requires_grad = True
 
-    if hasattr(backbone, "norm") and isinstance(backbone.norm, nn.Module):
+    if n > 0 and hasattr(backbone, "norm") and isinstance(backbone.norm, nn.Module):
         for p in backbone.norm.parameters():
             p.requires_grad = True
 
@@ -192,8 +192,29 @@ class Classifier(nn.Module):
         """Per-member logits, shape ``(num_members, N, num_classes)``."""
         return torch.stack(list(self.iter_member_logits(x)), dim=0)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Log of the probability-space ensemble average, shape ``(N, num_classes)``.
+    def iter_backbone_logits(self, x: torch.Tensor):
+        """Yield each backbone's own combined logits (log of that backbone's
+        heads' probability-space average) one backbone at a time — the
+        per-backbone analogue of ``iter_member_logits``, used for fitting an
+        independent temperature per backbone.
+        """
+        idx = 0
+        for bb in self.backbones:
+            feat = bb(x)
+            head_logits = torch.stack(
+                [self.head[idx + j](feat) for j in range(self.heads_per_backbone)], dim=0
+            )
+            idx += self.heads_per_backbone
+            probs = torch.softmax(head_logits, dim=-1).mean(dim=0)
+            yield torch.log(probs.clamp_min(1e-12))
+
+    def forward_per_backbone(self, x: torch.Tensor) -> torch.Tensor:
+        """Per-backbone combined logits, shape ``(num_backbones, N, num_classes)``."""
+        return torch.stack(list(self.iter_backbone_logits(x)), dim=0)
+
+    def forward(self, x: torch.Tensor, temperatures: list[float] | None = None) -> torch.Tensor:
+        """Log of the probability-space ensemble average across backbones,
+        shape ``(N, num_classes)``.
 
         Averaging each member's softmax (rather than its raw logits) is the
         standard deep-ensemble combination rule and calibrates better.
@@ -202,7 +223,16 @@ class Classifier(nn.Module):
         probabilities already sum to 1, ``softmax(forward(x))`` downstream
         reproduces them exactly, so temperature scaling, ``CrossEntropyLoss``,
         etc. all still work unchanged.
+
+        If ``temperatures`` is given (one scalar per backbone), each
+        backbone's own combined distribution is temperature-scaled
+        *independently* before joining the cross-backbone average — rather
+        than one shared temperature applied after combining everything.
         """
-        member_probs = torch.softmax(self.forward_members(x), dim=-1)
+        backbone_logits = self.forward_per_backbone(x)  # (num_backbones, N, C)
+        if temperatures is not None:
+            t = torch.tensor(temperatures, device=backbone_logits.device, dtype=backbone_logits.dtype)
+            backbone_logits = backbone_logits / t.view(-1, 1, 1)
+        member_probs = torch.softmax(backbone_logits, dim=-1)
         mean_probs = member_probs.mean(dim=0)
         return torch.log(mean_probs.clamp_min(1e-12))
