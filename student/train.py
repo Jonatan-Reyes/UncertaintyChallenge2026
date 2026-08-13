@@ -186,38 +186,66 @@ class Trainer:
             self.model.load_state_dict(self.best_state_dict)
 
 
+def _normalize_temperature_metrics(metric: str | tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    if isinstance(metric, str):
+        names = [m.strip().lower() for m in metric.split(",") if m.strip()]
+    else:
+        names = [str(m).strip().lower() for m in metric if str(m).strip()]
+    if not names:
+        names = ["nll"]
+    invalid = [m for m in names if m not in {"nll", "ece", "brier"}]
+    if invalid:
+        raise ValueError(f"Unsupported temperature metric(s): {invalid}. Choose from 'nll', 'ece', 'brier'.")
+    return tuple(dict.fromkeys(names))
+
+
+def _temperature_metric_values(logits: torch.Tensor, labels: torch.Tensor, metrics: tuple[str, ...]) -> dict[str, float]:
+    probs = torch.softmax(logits, dim=1).detach().cpu().numpy()
+    target = labels.detach().cpu().numpy()
+    out: dict[str, float] = {}
+    for name in metrics:
+        if name == "nll":
+            out[name] = float(M.nll(probs, target))
+        elif name == "ece":
+            out[name] = float(M.ece(probs, target))
+        elif name == "brier":
+            out[name] = float(M.brier(probs, target))
+    return out
+
+
 def fit_temperature(
     logits: torch.Tensor,
     labels: torch.Tensor,
-    metric: str = "nll",
+    metric: str | tuple[str, ...] | list[str] = "nll",
     n_trials: int = 50,
     seed: int | None = None,
 ) -> float:
     """Fit a single scalar temperature on ``(logits, labels)``.
 
-    ``metric`` can be ``"nll"`` (default, differentiable via LBFGS) or
-    ``"ece"`` (non-differentiable, optimized with Optuna). ``n_trials`` is only
-    used for the ECE path.
+    ``metric`` can be a single objective (``"nll"``/``"ece"``/``"brier"``)
+    or a list/tuple of multiple objectives to optimize together with Optuna.
     """
-    metric = metric.lower()
-    if metric == "nll":
-        log_T = nn.Parameter(torch.zeros(1, device=logits.device))
-        optimizer = optim.LBFGS([log_T], lr=0.1, max_iter=100)
-        criterion = nn.CrossEntropyLoss()
+    metrics = _normalize_temperature_metrics(metric)
 
-        def closure():
-            optimizer.zero_grad()
-            loss = criterion(logits / log_T.exp(), labels)
-            loss.backward()
-            return loss
+    if len(metrics) == 1:
+        metric_name = metrics[0]
+        if metric_name == "nll":
+            log_T = nn.Parameter(torch.zeros(1, device=logits.device))
+            optimizer = optim.LBFGS([log_T], lr=0.1, max_iter=100)
+            criterion = nn.CrossEntropyLoss()
 
-        optimizer.step(closure)
-        T = float(log_T.exp().detach().cpu())
-        if not (T > 0 and T < float("inf")):
-            return 1.0
-        return T
+            def closure():
+                optimizer.zero_grad()
+                loss = criterion(logits / log_T.exp(), labels)
+                loss.backward()
+                return loss
 
-    if metric == "ece":
+            optimizer.step(closure)
+            T = float(log_T.exp().detach().cpu())
+            if not (T > 0 and T < float("inf")):
+                return 1.0
+            return T
+
         if n_trials <= 0:
             n_trials = 1
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -225,23 +253,65 @@ def fit_temperature(
         def objective(trial: optuna.Trial) -> float:
             T = trial.suggest_float("T", 0.1, 10.0, log=True)
             probs = torch.softmax(logits / T, dim=1).detach().cpu().numpy()
-            return float(M.ece(probs, labels.cpu().numpy()))
+            if metric_name == "nll":
+                return float(M.nll(probs, labels.cpu().numpy()))
+            if metric_name == "ece":
+                return float(M.ece(probs, labels.cpu().numpy()))
+            return float(M.brier(probs, labels.cpu().numpy()))
+
+        def print_callback(study: optuna.study.Study, trial: optuna.trial.FrozenTrial) -> None:
+            T = float(trial.params["T"])
+            value = float(trial.value)
+            print(f"temp_optuna trial {trial.number:03d} | T={T:.4f} | {metric_name}={value:.6f}")
 
         study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=seed))
-        study.optimize(objective, n_trials=n_trials)
+        study.optimize(objective, n_trials=n_trials, callbacks=[print_callback])
         T = float(study.best_trial.params["T"])
         if not (T > 0 and T < float("inf")):
             return 1.0
         return T
 
-    raise ValueError(f"Unsupported temperature metric: {metric!r}; choose 'nll' or 'ece'.")
+    if n_trials <= 0:
+        n_trials = 1
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    def objective(trial: optuna.Trial) -> tuple[float, ...]:
+        T = trial.suggest_float("T", 0.1, 10.0, log=True)
+        scaled_logits = logits / T
+        probs = torch.softmax(scaled_logits, dim=1).detach().cpu().numpy()
+        target = labels.detach().cpu().numpy()
+        values: list[float] = []
+        for name in metrics:
+            if name == "nll":
+                values.append(float(M.nll(probs, target)))
+            elif name == "ece":
+                values.append(float(M.ece(probs, target)))
+            else:
+                values.append(float(M.brier(probs, target)))
+        return tuple(values)
+
+    def print_callback(study: optuna.study.Study, trial: optuna.trial.FrozenTrial) -> None:
+        T = float(trial.params["T"])
+        metric_values = {m: float(v) for m, v in zip(metrics, trial.values)}
+        details = " | ".join(f"{m}={metric_values[m]:.6f}" for m in metrics)
+        print(f"temp_optuna trial {trial.number:03d} | T={T:.4f} | {details}")
+
+    study = optuna.create_study(
+        directions=["minimize"] * len(metrics),
+        sampler=optuna.samplers.TPESampler(seed=seed),
+    )
+    study.optimize(objective, n_trials=n_trials, callbacks=[print_callback])
+    T = float(study.best_trials[0].params["T"])
+    if not (T > 0 and T < float("inf")):
+        return 1.0
+    return T
 
 
 def temperature_scale(
     model: nn.Module,
     val_loader: DataLoader,
     device,
-    metric: str = "nll",
+    metric: str | tuple[str, ...] | list[str] = "nll",
     n_trials: int = 50,
     seed: int | None = None,
 ) -> float:
@@ -314,9 +384,10 @@ def train(
     lora_target_modules: tuple[str, ...] = ("qkv", "proj", "fc1", "fc2"),
     modules_to_save: tuple[str, ...] = ("head",),
     early_stop_metric: str = "accuracy",
-    temperature_metric: str = "nll",
+    temperature_metric: str | tuple[str, ...] | list[str] = "nll",
     temperature_n_trials: int = 50,
     temperature_seed: int | None = None,
+    temperature_metrics: tuple[str, ...] | list[str] | None = None,
 ) -> None:
     device = torch.device(f"cuda:{device_idx}" if torch.cuda.is_available() and device_idx is not None else "cpu")
     output_dir = Path(output_dir)
@@ -324,6 +395,9 @@ def train(
 
     num_classes = get_num_classes(data_root)
 
+    chosen_temperature_metrics = tuple(_normalize_temperature_metrics(
+        temperature_metrics if temperature_metrics is not None else temperature_metric
+    ))
     hparams = {
         "epochs": int(epochs),
         "batch_size": int(batch_size),
@@ -341,7 +415,7 @@ def train(
         "lora_target_modules": list(lora_target_modules),
         "modules_to_save": list(modules_to_save),
         "early_stop_metric": str(early_stop_metric),
-        "temperature_metric": str(temperature_metric),
+        "temperature_metric": list(chosen_temperature_metrics),
         "temperature_n_trials": int(temperature_n_trials),
         "temperature_seed": None if temperature_seed is None else int(temperature_seed),
         "data_root": str(data_root),
@@ -405,16 +479,16 @@ def train(
         model,
         val_loader,
         device,
-        metric=temperature_metric,
+        metric=chosen_temperature_metrics,
         n_trials=temperature_n_trials,
         seed=temperature_seed,
     )
     if use_lora:
         save_checkpoint(model, num_classes, T, output_dir / "model_temp_scaled_lora", hyperparameters=hparams)
-        print(f"learned T={T:.4f} via {temperature_metric} -> saved model_temp_scaled_lora/")
+        print(f"learned T={T:.4f} via {chosen_temperature_metrics} -> saved model_temp_scaled_lora/")
     else:
         save_checkpoint(model, num_classes, T, output_dir / "model_temp_scaled.pt", hyperparameters=hparams)
-        print(f"learned T={T:.4f} via {temperature_metric} -> saved model_temp_scaled.pt")
+        print(f"learned T={T:.4f} via {chosen_temperature_metrics} -> saved model_temp_scaled.pt")
 
 
 def main() -> None:
@@ -437,10 +511,13 @@ def main() -> None:
                         help="Which val metric drives early stopping. Default is "
                              "accuracy: we teach accuracy-first, calibration-second.")
     parser.add_argument("--temperature-metric", type=str, default="nll",
-                        choices=["nll", "ece"],
-                        help="Objective used to fit the temperature scaling scalar on validation logits.")
+                        choices=["nll", "ece", "brier"],
+                        help="Single objective used to fit the temperature scaling scalar on validation logits.")
+    parser.add_argument("--temperature-metrics", nargs="+", default=None,
+                        choices=["nll", "ece", "brier"],
+                        help="List of objectives to optimize together with Optuna, e.g. --temperature-metrics nll ece brier.")
     parser.add_argument("--temperature-n-trials", type=int, default=50,
-                        help="Number of Optuna trials used when --temperature-metric=ece.")
+                        help="Number of Optuna trials used when fitting temperature.")
     parser.add_argument("--temperature-seed", type=int, default=None,
                         help="Optional seed for the Optuna study when fitting temperature.")
     parser.add_argument("--num-workers", type=int, default=4)
@@ -466,6 +543,8 @@ def main() -> None:
     args = parser.parse_args()
     args.lora_target_modules = tuple(args.lora_target_modules)
     args.modules_to_save = tuple(args.modules_to_save)
+    if args.temperature_metrics is not None:
+        args.temperature_metric = tuple(args.temperature_metrics)
     train(**vars(args))
 
 
