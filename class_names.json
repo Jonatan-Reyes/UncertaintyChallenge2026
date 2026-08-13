@@ -1,0 +1,1092 @@
+{
+  "source": "Third-party mirror of WILDS iwildcam2020 categories.csv (official CodaLab bundle is unreachable)",
+  "source_repo": "https://github.com/vijayakuruba/IFT6759_Distribution_shifts_WILDS/blob/main/Results_Interpretation/categories.csv",
+  "derivation": "That csv has columns y,category_id,name and is the exact output of p-lambda/wilds dataset_preprocessing/iwildcam/create_split.py. Here it is re-indexed through challenge_data/class_mapping.json (new_to_original, where \"original\" = WILDS y) to give one name per course class id 0..56, in order.",
+  "validated": "new id 12 -> wilds y 24 -> \"bos taurus\" (cattle), matching empirical ground truth from real photos noted in wcs_camera_traps_categories_raw.json. All 57 ids resolved with zero misses.",
+  "num_classes": 57,
+  "class_names": [
+    "empty",
+    "tayassu pecari",
+    "dasyprocta punctata",
+    "puma concolor",
+    "pecari tajacu",
+    "leopardus pardalis",
+    "geotrygon montana",
+    "eira barbara",
+    "panthera onca",
+    "tinamus major",
+    "leopardus wiedii",
+    "capra aegagrus",
+    "bos taurus",
+    "ovis aries",
+    "papio anubis",
+    "loxodonta africana",
+    "cricetomys gambianus",
+    "aepyceros melampus",
+    "equus ferus",
+    "tragelaphus oryx",
+    "kobus ellipsiprymnus",
+    "phacochoerus africanus",
+    "syncerus caffer",
+    "equus quagga",
+    "giraffa camelopardalis",
+    "madoqua guentheri",
+    "argusianus argus",
+    "muntiacus muntjak",
+    "sus scrofa",
+    "helarctos malayanus",
+    "hystrix brachyura",
+    "nasua narica",
+    "didelphis sp",
+    "penelope purpurascens",
+    "camelus dromedarius",
+    "acryllium vulturinum",
+    "equus grevyi",
+    "capricornis sumatraensis",
+    "macaca sp",
+    "francolinus nobilis",
+    "cercopithecus lhoesti",
+    "cephalophus nigrifrons",
+    "atherurus africanus",
+    "funisciurus carruthersi",
+    "cephalophus silvicultor",
+    "urocyon cinereoargenteus",
+    "meleagris ocellata",
+    "crax rubra",
+    "agouti paca",
+    "tapirus bairdii",
+    "odocoileus virginianus",
+    "leptotila plumbeiceps",
+    "mazama temama",
+    "mazama pandora",
+    "motorcycle",
+    "peromyscus sp",
+    "sciurus sp"
+  ],
+  "species_note": "common_name/taxonomy/continents in `species` below were compiled from general taxonomic references (Wikipedia, GBIF, IUCN, Birds of the World, iNaturalist) via manual research, not from the iWildCam/WILDS dataset itself. 'continents' reflects native (or, for domestic species, domesticated) range, not confirmed per-photo locations. Genus-level classes (didelphis sp, macaca sp, peromyscus sp, sciurus sp) list the genus's general range since the exact species wasn't resolved by the original annotators. Spot-check before relying on this for grading-critical work.",
+  "species": [
+    {
+      "class_id": 0,
+      "scientific_name": "empty",
+      "common_name": null,
+      "taxonomy": null,
+      "continents": [],
+      "note": "No animal present in the frame."
+    },
+    {
+      "class_id": 1,
+      "scientific_name": "tayassu pecari",
+      "common_name": "White-lipped peccary",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Tayassuidae",
+        "genus": "Tayassu",
+        "species_epithet": "pecari"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 2,
+      "scientific_name": "dasyprocta punctata",
+      "common_name": "Central American agouti",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Rodentia",
+        "family": "Dasyproctidae",
+        "genus": "Dasyprocta",
+        "species_epithet": "punctata"
+      },
+      "continents": [
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 3,
+      "scientific_name": "puma concolor",
+      "common_name": "Puma (cougar / mountain lion)",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Carnivora",
+        "family": "Felidae",
+        "genus": "Puma",
+        "species_epithet": "concolor"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 4,
+      "scientific_name": "pecari tajacu",
+      "common_name": "Collared peccary",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Tayassuidae",
+        "genus": "Pecari",
+        "species_epithet": "tajacu"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 5,
+      "scientific_name": "leopardus pardalis",
+      "common_name": "Ocelot",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Carnivora",
+        "family": "Felidae",
+        "genus": "Leopardus",
+        "species_epithet": "pardalis"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 6,
+      "scientific_name": "geotrygon montana",
+      "common_name": "Ruddy quail-dove",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Aves",
+        "order": "Columbiformes",
+        "family": "Columbidae",
+        "genus": "Geotrygon",
+        "species_epithet": "montana"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 7,
+      "scientific_name": "eira barbara",
+      "common_name": "Tayra",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Carnivora",
+        "family": "Mustelidae",
+        "genus": "Eira",
+        "species_epithet": "barbara"
+      },
+      "continents": [
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 8,
+      "scientific_name": "panthera onca",
+      "common_name": "Jaguar",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Carnivora",
+        "family": "Felidae",
+        "genus": "Panthera",
+        "species_epithet": "onca"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 9,
+      "scientific_name": "tinamus major",
+      "common_name": "Great tinamou",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Aves",
+        "order": "Tinamiformes",
+        "family": "Tinamidae",
+        "genus": "Tinamus",
+        "species_epithet": "major"
+      },
+      "continents": [
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 10,
+      "scientific_name": "leopardus wiedii",
+      "common_name": "Margay",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Carnivora",
+        "family": "Felidae",
+        "genus": "Leopardus",
+        "species_epithet": "wiedii"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 11,
+      "scientific_name": "capra aegagrus",
+      "common_name": "Wild goat (domestic goat's wild ancestor)",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Bovidae",
+        "genus": "Capra",
+        "species_epithet": "aegagrus"
+      },
+      "continents": [
+        "Asia"
+      ],
+      "note": "Native range West/Central Asia; domestic goats (subsp. hircus) are kept worldwide, incl. Africa where this study site likely photographed them."
+    },
+    {
+      "class_id": 12,
+      "scientific_name": "bos taurus",
+      "common_name": "Domestic cattle",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Bovidae",
+        "genus": "Bos",
+        "species_epithet": "taurus"
+      },
+      "continents": [
+        "Africa",
+        "Asia",
+        "Europe",
+        "North America",
+        "South America",
+        "Australia"
+      ],
+      "note": "Domesticated worldwide; wild aurochs ancestor was native to Eurasia/North Africa."
+    },
+    {
+      "class_id": 13,
+      "scientific_name": "ovis aries",
+      "common_name": "Domestic sheep",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Bovidae",
+        "genus": "Ovis",
+        "species_epithet": "aries"
+      },
+      "continents": [
+        "Africa",
+        "Asia",
+        "Europe",
+        "North America",
+        "South America",
+        "Australia"
+      ],
+      "note": "Domesticated worldwide."
+    },
+    {
+      "class_id": 14,
+      "scientific_name": "papio anubis",
+      "common_name": "Olive baboon",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Primates",
+        "family": "Cercopithecidae",
+        "genus": "Papio",
+        "species_epithet": "anubis"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 15,
+      "scientific_name": "loxodonta africana",
+      "common_name": "African bush elephant",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Proboscidea",
+        "family": "Elephantidae",
+        "genus": "Loxodonta",
+        "species_epithet": "africana"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 16,
+      "scientific_name": "cricetomys gambianus",
+      "common_name": "Gambian pouched rat",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Rodentia",
+        "family": "Nesomyidae",
+        "genus": "Cricetomys",
+        "species_epithet": "gambianus"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 17,
+      "scientific_name": "aepyceros melampus",
+      "common_name": "Impala",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Bovidae",
+        "genus": "Aepyceros",
+        "species_epithet": "melampus"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 18,
+      "scientific_name": "equus ferus",
+      "common_name": "Wild / domestic horse",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Perissodactyla",
+        "family": "Equidae",
+        "genus": "Equus",
+        "species_epithet": "ferus"
+      },
+      "continents": [
+        "Asia",
+        "Europe"
+      ],
+      "note": "Native range Eurasian steppe; domestic/feral populations worldwide."
+    },
+    {
+      "class_id": 19,
+      "scientific_name": "tragelaphus oryx",
+      "common_name": "Common eland",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Bovidae",
+        "genus": "Tragelaphus",
+        "species_epithet": "oryx"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 20,
+      "scientific_name": "kobus ellipsiprymnus",
+      "common_name": "Waterbuck",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Bovidae",
+        "genus": "Kobus",
+        "species_epithet": "ellipsiprymnus"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 21,
+      "scientific_name": "phacochoerus africanus",
+      "common_name": "Common warthog",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Suidae",
+        "genus": "Phacochoerus",
+        "species_epithet": "africanus"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 22,
+      "scientific_name": "syncerus caffer",
+      "common_name": "African buffalo",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Bovidae",
+        "genus": "Syncerus",
+        "species_epithet": "caffer"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 23,
+      "scientific_name": "equus quagga",
+      "common_name": "Plains zebra",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Perissodactyla",
+        "family": "Equidae",
+        "genus": "Equus",
+        "species_epithet": "quagga"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 24,
+      "scientific_name": "giraffa camelopardalis",
+      "common_name": "Giraffe (northern giraffe)",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Giraffidae",
+        "genus": "Giraffa",
+        "species_epithet": "camelopardalis"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 25,
+      "scientific_name": "madoqua guentheri",
+      "common_name": "Gunther's dik-dik",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Bovidae",
+        "genus": "Madoqua",
+        "species_epithet": "guentheri"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 26,
+      "scientific_name": "argusianus argus",
+      "common_name": "Great argus",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Aves",
+        "order": "Galliformes",
+        "family": "Phasianidae",
+        "genus": "Argusianus",
+        "species_epithet": "argus"
+      },
+      "continents": [
+        "Asia"
+      ]
+    },
+    {
+      "class_id": 27,
+      "scientific_name": "muntiacus muntjak",
+      "common_name": "Southern red muntjac (barking deer)",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Cervidae",
+        "genus": "Muntiacus",
+        "species_epithet": "muntjak"
+      },
+      "continents": [
+        "Asia"
+      ]
+    },
+    {
+      "class_id": 28,
+      "scientific_name": "sus scrofa",
+      "common_name": "Wild boar",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Suidae",
+        "genus": "Sus",
+        "species_epithet": "scrofa"
+      },
+      "continents": [
+        "Asia",
+        "Europe",
+        "Africa"
+      ],
+      "note": "Native to Eurasia/North Africa; introduced/feral on other continents."
+    },
+    {
+      "class_id": 29,
+      "scientific_name": "helarctos malayanus",
+      "common_name": "Sun bear",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Carnivora",
+        "family": "Ursidae",
+        "genus": "Helarctos",
+        "species_epithet": "malayanus"
+      },
+      "continents": [
+        "Asia"
+      ]
+    },
+    {
+      "class_id": 30,
+      "scientific_name": "hystrix brachyura",
+      "common_name": "Malayan porcupine",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Rodentia",
+        "family": "Hystricidae",
+        "genus": "Hystrix",
+        "species_epithet": "brachyura"
+      },
+      "continents": [
+        "Asia"
+      ]
+    },
+    {
+      "class_id": 31,
+      "scientific_name": "nasua narica",
+      "common_name": "White-nosed coati",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Carnivora",
+        "family": "Procyonidae",
+        "genus": "Nasua",
+        "species_epithet": "narica"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 32,
+      "scientific_name": "didelphis sp",
+      "common_name": "Opossum (genus, species unresolved)",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Didelphimorphia",
+        "family": "Didelphidae",
+        "genus": "Didelphis",
+        "species_epithet": "sp."
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 33,
+      "scientific_name": "penelope purpurascens",
+      "common_name": "Crested guan",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Aves",
+        "order": "Galliformes",
+        "family": "Cracidae",
+        "genus": "Penelope",
+        "species_epithet": "purpurascens"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 34,
+      "scientific_name": "camelus dromedarius",
+      "common_name": "Dromedary (one-humped camel)",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Camelidae",
+        "genus": "Camelus",
+        "species_epithet": "dromedarius"
+      },
+      "continents": [
+        "Africa",
+        "Asia"
+      ],
+      "note": "Native/domesticated Horn of Africa & Middle East; feral herds also in Australia."
+    },
+    {
+      "class_id": 35,
+      "scientific_name": "acryllium vulturinum",
+      "common_name": "Vulturine guineafowl",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Aves",
+        "order": "Galliformes",
+        "family": "Numididae",
+        "genus": "Acryllium",
+        "species_epithet": "vulturinum"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 36,
+      "scientific_name": "equus grevyi",
+      "common_name": "Grevy's zebra",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Perissodactyla",
+        "family": "Equidae",
+        "genus": "Equus",
+        "species_epithet": "grevyi"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 37,
+      "scientific_name": "capricornis sumatraensis",
+      "common_name": "Sumatran serow",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Bovidae",
+        "genus": "Capricornis",
+        "species_epithet": "sumatraensis"
+      },
+      "continents": [
+        "Asia"
+      ]
+    },
+    {
+      "class_id": 38,
+      "scientific_name": "macaca sp",
+      "common_name": "Macaque (genus, species unresolved)",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Primates",
+        "family": "Cercopithecidae",
+        "genus": "Macaca",
+        "species_epithet": "sp."
+      },
+      "continents": [
+        "Asia"
+      ],
+      "note": "Genus is mostly Asian; one species (Barbary macaque) is native to North Africa."
+    },
+    {
+      "class_id": 39,
+      "scientific_name": "francolinus nobilis",
+      "common_name": "Handsome francolin (handsome spurfowl)",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Aves",
+        "order": "Galliformes",
+        "family": "Phasianidae",
+        "genus": "Pternistis",
+        "species_epithet": "nobilis"
+      },
+      "continents": [
+        "Africa"
+      ],
+      "note": "Now usually placed in genus Pternistis; Francolinus nobilis is a synonym. Albertine Rift montane forests (DR Congo, Uganda, Rwanda)."
+    },
+    {
+      "class_id": 40,
+      "scientific_name": "cercopithecus lhoesti",
+      "common_name": "L'Hoest's monkey",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Primates",
+        "family": "Cercopithecidae",
+        "genus": "Cercopithecus",
+        "species_epithet": "lhoesti"
+      },
+      "continents": [
+        "Africa"
+      ],
+      "note": "Albertine Rift (DR Congo, Uganda, Rwanda, Burundi)."
+    },
+    {
+      "class_id": 41,
+      "scientific_name": "cephalophus nigrifrons",
+      "common_name": "Black-fronted duiker",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Bovidae",
+        "genus": "Cephalophus",
+        "species_epithet": "nigrifrons"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 42,
+      "scientific_name": "atherurus africanus",
+      "common_name": "African brush-tailed porcupine",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Rodentia",
+        "family": "Hystricidae",
+        "genus": "Atherurus",
+        "species_epithet": "africanus"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 43,
+      "scientific_name": "funisciurus carruthersi",
+      "common_name": "Carruthers' mountain squirrel",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Rodentia",
+        "family": "Sciuridae",
+        "genus": "Funisciurus",
+        "species_epithet": "carruthersi"
+      },
+      "continents": [
+        "Africa"
+      ],
+      "note": "Albertine Rift montane forests (DR Congo, Uganda, Rwanda, Burundi)."
+    },
+    {
+      "class_id": 44,
+      "scientific_name": "cephalophus silvicultor",
+      "common_name": "Yellow-backed duiker",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Bovidae",
+        "genus": "Cephalophus",
+        "species_epithet": "silvicultor"
+      },
+      "continents": [
+        "Africa"
+      ]
+    },
+    {
+      "class_id": 45,
+      "scientific_name": "urocyon cinereoargenteus",
+      "common_name": "Gray fox",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Carnivora",
+        "family": "Canidae",
+        "genus": "Urocyon",
+        "species_epithet": "cinereoargenteus"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ],
+      "note": "Range extends marginally into northern South America (Colombia/Venezuela)."
+    },
+    {
+      "class_id": 46,
+      "scientific_name": "meleagris ocellata",
+      "common_name": "Ocellated turkey",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Aves",
+        "order": "Galliformes",
+        "family": "Phasianidae",
+        "genus": "Meleagris",
+        "species_epithet": "ocellata"
+      },
+      "continents": [
+        "North America",
+        "Central America"
+      ],
+      "note": "Restricted to the Yucatan Peninsula (Mexico, Belize, Guatemala)."
+    },
+    {
+      "class_id": 47,
+      "scientific_name": "crax rubra",
+      "common_name": "Great curassow",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Aves",
+        "order": "Galliformes",
+        "family": "Cracidae",
+        "genus": "Crax",
+        "species_epithet": "rubra"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 48,
+      "scientific_name": "agouti paca",
+      "common_name": "Lowland paca",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Rodentia",
+        "family": "Cuniculidae",
+        "genus": "Cuniculus",
+        "species_epithet": "paca"
+      },
+      "continents": [
+        "Central America",
+        "South America"
+      ],
+      "note": "Also classified as Cuniculus paca; Agouti paca is a widely used synonym (used directly in this dataset)."
+    },
+    {
+      "class_id": 49,
+      "scientific_name": "tapirus bairdii",
+      "common_name": "Baird's tapir",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Perissodactyla",
+        "family": "Tapiridae",
+        "genus": "Tapirus",
+        "species_epithet": "bairdii"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ],
+      "note": "Range extends marginally into Colombia/Ecuador."
+    },
+    {
+      "class_id": 50,
+      "scientific_name": "odocoileus virginianus",
+      "common_name": "White-tailed deer",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Cervidae",
+        "genus": "Odocoileus",
+        "species_epithet": "virginianus"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    },
+    {
+      "class_id": 51,
+      "scientific_name": "leptotila plumbeiceps",
+      "common_name": "Grey-headed dove",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Aves",
+        "order": "Columbiformes",
+        "family": "Columbidae",
+        "genus": "Leptotila",
+        "species_epithet": "plumbeiceps"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ],
+      "note": "Eastern Mexico to Colombia."
+    },
+    {
+      "class_id": 52,
+      "scientific_name": "mazama temama",
+      "common_name": "Central American red brocket",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Cervidae",
+        "genus": "Mazama",
+        "species_epithet": "temama"
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ],
+      "note": "Mexico to northern Colombia."
+    },
+    {
+      "class_id": 53,
+      "scientific_name": "mazama pandora",
+      "common_name": "Yucatan brown brocket",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Artiodactyla",
+        "family": "Cervidae",
+        "genus": "Mazama",
+        "species_epithet": "pandora"
+      },
+      "continents": [
+        "North America",
+        "Central America"
+      ],
+      "note": "Restricted to the Yucatan Peninsula (Mexico, Belize, Guatemala)."
+    },
+    {
+      "class_id": 54,
+      "scientific_name": "motorcycle",
+      "common_name": null,
+      "taxonomy": null,
+      "continents": [],
+      "note": "Not an animal; a vehicle class picked up by camera-trap triggers. Visually verified against all 400 train images for this class (2026-08-13): label checks out — many frames show motion-blurred motorbikes/dirt bikes and riders on trail, plus at least one pickup truck. Most frames are empty trail/forest since the vehicle passes quickly and often misses the trigger window, but this is not a label mismatch like the earlier taxonomy-id confusions."
+    },
+    {
+      "class_id": 55,
+      "scientific_name": "peromyscus sp",
+      "common_name": "Deer mouse (genus, species unresolved)",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Rodentia",
+        "family": "Cricetidae",
+        "genus": "Peromyscus",
+        "species_epithet": "sp."
+      },
+      "continents": [
+        "North America",
+        "Central America"
+      ]
+    },
+    {
+      "class_id": 56,
+      "scientific_name": "sciurus sp",
+      "common_name": "Tree squirrel (genus, species unresolved)",
+      "taxonomy": {
+        "kingdom": "Animalia",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Rodentia",
+        "family": "Sciuridae",
+        "genus": "Sciurus",
+        "species_epithet": "sp."
+      },
+      "continents": [
+        "North America",
+        "Central America",
+        "South America"
+      ]
+    }
+  ]
+}
