@@ -1,71 +1,0 @@
-/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/_vendor/appdirs.py:96: SyntaxWarning: "\D" is an invalid escape sequence. Such sequences will not work in the future. Did you mean "\\D"? A raw string is also an option.
-  Win XP:     C:\Documents and Settings\All Users\Application Data\<AppAuthor>\<AppName>
-/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/disk/delete.py:172: SyntaxWarning: 'return' in a 'finally' block
-  return False
-Traceback (most recent call last):
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1132, in __call__
-    return func(*args, **kwargs)
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main.py", line 83, in main_sourced
-    init_loggers(context)
-    ~~~~~~~~~~~~^^^^^^^^^
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main.py", line 42, in init_loggers
-    initialize_logging()
-    ~~~~~~~~~~~~~~~~~~^^
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/logging.py", line 152, in initialize_logging
-    initialize_root_logger()
-    ~~~~~~~~~~~~~~~~~~~~~~^^
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/logging.py", line 194, in initialize_root_logger
-    attach_stderr_handler(level=level)
-    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/common/io.py", line 334, in attach_stderr_handler
-    with _logger_lock():
-         ~~~~~~~~~~~~^^
-  File "/home/wxp878/miniconda3/lib/python3.14/contextlib.py", line 141, in __enter__
-    return next(self.gen)
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/common/io.py", line 274, in _logger_lock
-    logging._acquireLock()
-    ^^^^^^^^^^^^^^^^^^^^
-AttributeError: module 'logging' has no attribute '_acquireLock'
-
-During handling of the above exception, another exception occurred:
-
-Traceback (most recent call last):
-  File "/home/wxp878/miniconda3/bin/conda", line 13, in <module>
-    sys.exit(main())
-             ~~~~^^
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main.py", line 112, in main
-    return conda_exception_handler(main, *args, **kwargs)
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1432, in conda_exception_handler
-    return_value = exception_handler(func, *args, **kwargs)
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1135, in __call__
-    return self.handle_exception(exc_val, exc_tb)
-           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1175, in handle_exception
-    return self.handle_unexpected_exception(exc_val, exc_tb)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1186, in handle_unexpected_exception
-    self.print_unexpected_error_report(error_report)
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/exceptions.py", line 1248, in print_unexpected_error_report
-    from .cli.main_info import get_env_vars_str, get_main_info_str
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/cli/main_info.py", line 15, in <module>
-    from ..core.index import _supplement_index_with_system
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/core/index.py", line 15, in <module>
-    from .package_cache_data import PackageCacheData
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/core/package_cache_data.py", line 22, in <module>
-    from .path_actions import CacheUrlAction, ExtractPackageAction
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/core/path_actions.py", line 28, in <module>
-    from ..gateways.connection.download import download
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/connection/download.py", line 12, in <module>
-    from .session import CondaSession
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/connection/session.py", line 9, in <module>
-    from .adapters.ftp import FTPAdapter
-  File "/opt/software/mamba/23.3.1/lib/python3.10/site-packages/conda/gateways/connection/adapters/ftp.py", line 21, in <module>
-    import cgi
-ModuleNotFoundError: No module named 'cgi'
-hendrixgpu03fl.unicph.domain
-cuda Devices
-0
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-cuda
-train:   0%|          | 0/296 [00:00<?, ?it/s]train:   0%|          | 1/296 [00:05<25:31,  5.19s/it]train:   1%|          | 2/296 [00:07<17:39,  3.60s/it]train:   1%|          | 3/296 [00:10<15:06,  3.09s/it]train:   1%|▏         | 4/296 [00:12<13:54,  2.86s/it]train:   2%|▏         | 5/296 [00:15<13:14,  2.73s/it]train:   2%|▏         | 6/296 [00:17<12:49,  2.65s/it]train:   2%|▏         | 7/296 [00:20<12:33,  2.61s/it]train:   3%|▎         | 8/296 [00:22<12:19,  2.57s/it]train:   3%|▎         | 9/296 [00:25<12:10,  2.54s/it]train:   3%|▎         | 10/296 [00:27<12:03,  2.53s/it]train:   4%|▎         | 11/296 [00:30<11:58,  2.52s/it]train:   4%|▍         | 12/296 [00:32<11:54,  2.52s/it]train:   4%|▍         | 13/296 [00:35<11:50,  2.51s/it]train:   5%|▍         | 14/296 [00:37<11:47,  2.51s/it]train:   5%|▌         | 15/296 [00:40<11:44,  2.51s/it]train:   5%|▌         | 16/296 [00:42<11:41,  2.51s/it]train:   6%|▌         | 17/296 [00:45<11:38,  2.50s/it]train:   6%|▌         | 18/296 [00:47<11:35,  2.50s/it]train:   6%|▋         | 19/296 [00:50<11:33,  2.50s/it]train:   7%|▋         | 20/296 [00:52<11:30,  2.50s/it]train:   7%|▋         | 21/296 [00:55<11:28,  2.50s/it]train:   7%|▋         | 22/296 [00:57<11:26,  2.51s/it]train:   8%|▊         | 23/296 [01:00<11:24,  2.51s/it]train:   8%|▊         | 24/296 [01:02<11:22,  2.51s/it]train:   8%|▊         | 25/296 [01:05<11:19,  2.51s/it]train:   9%|▉         | 26/296 [01:07<11:17,  2.51s/it]train:   9%|▉         | 27/296 [01:10<11:14,  2.51s/it]train:   9%|▉         | 28/296 [01:12<11:12,  2.51s/it]train:  10%|▉         | 29/296 [01:15<11:10,  2.51s/it]train:  10%|█         | 30/296 [01:17<11:08,  2.51s/it]train:  10%|█         | 31/296 [01:20<11:05,  2.51s/it]train:  11%|█         | 32/296 [01:22<11:01,  2.51s/it]train:  11%|█         | 33/296 [01:25<10:59,  2.51s/it]

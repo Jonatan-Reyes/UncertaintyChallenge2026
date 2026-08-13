@@ -2,14 +2,12 @@
 
 Defines the ``Classifier`` nn.Module used by ``train``, ``eval``, and ``predict``.
 
-An ensemble of 5 different pretrained foundation vision backbones (not 5
-copies of the same one) — each gets its own linear head, trained on
-cross-entropy plus an alpha-weighted Brier term (see ``train.py``'s
-``Trainer.criteria`` and ``CombinedLoss`` below), and predictions are
-combined by averaging softmax probabilities across all 5 members. Diversity
-comes from the backbones themselves (different architectures / pretraining
-objectives). Most of each backbone is frozen; only its last 2 layers are
-fine-tuned alongside its head.
+An ensemble of 2 large foundation vision backbones (DINOv2 and EVA-02) —
+each gets its own linear head, trained on cross-entropy plus an
+alpha-weighted Brier term (see ``train.py``'s ``Trainer.criteria`` and
+``CombinedLoss`` below), and predictions are combined by averaging softmax
+probabilities across both members. Most of each backbone is frozen; only
+its last 2 layers are fine-tuned alongside its head.
 
 The minimal contract (so train / eval / predict don't need to change):
 
@@ -24,16 +22,11 @@ import timm
 import torch
 import torch.nn as nn
 
-# 5 different foundation backbones: 2 self-supervised ViTs (DINOv3, DINOv2),
-# 1 vision-language contrastive model (SigLIP), 1 CNN (ConvNeXt), 1 masked-
-# image-modeling ViT (EVA-02) -- deliberately different architectures /
-# pretraining objectives, not 5 seeds of the same model.
+# DINOv2 (self-supervised ViT) and EVA-02 (masked-image-modeling ViT),
+# both large variants.
 DEFAULT_BACKBONES = [
-    "vit_base_patch16_dinov3.lvd1689m",
-    "vit_base_patch14_dinov2.lvd142m",
-    "vit_large_patch16_siglip_256.webli",
-    "convnext_base.fb_in22k",
-    "eva02_base_patch14_224.mim_in22k",
+    "vit_large_patch14_dinov2.lvd142m",
+    "eva02_large_patch14_224.mim_in22k",
 ]
 
 
