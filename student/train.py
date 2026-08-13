@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import itertools
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,7 +36,7 @@ from student.data import (
     default_train_transform,
 )
 from student.eval import evaluate_val_by_domain
-from student.model import DEFAULT_BACKBONES, BrierLoss, Classifier
+from student.model import DEFAULT_BACKBONES, BrierLoss, Classifier, CombinedLoss, SoftECELoss
 from student.plotting import energy_score, plot_energy_ood_roc, plot_reliability_diagram
 
 
@@ -61,7 +62,7 @@ class Trainer:
     train_loader: DataLoader
     val_loader: DataLoader
     optimizer: optim.Optimizer
-    criterion: nn.Module
+    criteria: list  # cycled to match Classifier.iter_member_logits' per-head order
     device: torch.device
     patience: int = 3
     early_stop_metric: str = "accuracy"
@@ -80,13 +81,16 @@ class Trainer:
         return value < self.best_val_metric
 
     def train_epoch(self) -> tuple[float, float]:
-        """Each member (backbone+head) is trained on its own cross-entropy
-        loss, not on the loss of their averaged prediction — so members fit
-        the data independently instead of being pulled toward agreement.
+        """Each member (one backbone's one head) is trained on its own loss,
+        not on the loss of the ensemble's averaged prediction — so members
+        fit the data independently instead of being pulled toward agreement.
+        Within each backbone, its ``heads_per_backbone`` heads each get a
+        *different* loss from ``self.criteria`` (NLL, Brier, ECE), cycling
+        to match ``iter_member_logits``'s per-backbone-then-per-head order.
         Each member's loss is backpropagated immediately (gradients
-        accumulate across the 5 ``backward()`` calls before one
+        accumulate across all ``backward()`` calls before one
         ``optimizer.step()``), so only one member's activations are ever in
-        memory at once. Gradients land on that member's linear head and its
+        memory at once. Gradients land on that member's own head and its
         backbone's unfrozen last-2-layers; the rest of each backbone stays
         fixed.
         """
@@ -100,8 +104,8 @@ class Trainer:
             self.optimizer.zero_grad()
             loss_sum = 0.0
             member_logits = []
-            for logits_k in self.model.iter_member_logits(imgs):
-                loss_k = self.criterion(logits_k, labels)
+            for logits_k, criterion_k in zip(self.model.iter_member_logits(imgs), itertools.cycle(self.criteria)):
+                loss_k = criterion_k(logits_k, labels)
                 loss_k.backward()
                 loss_sum += loss_k.item()
                 member_logits.append(logits_k.detach())
@@ -260,6 +264,7 @@ def train(
     backbones: list[str] | None = None,
     pretrained: bool = False,
     num_unfrozen_layers: int = 2,
+    alpha: float = 0.5,
     early_stop_metric: str = "accuracy",
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -268,6 +273,12 @@ def train(
     print(device)
 
     backbones = list(backbones) if backbones else list(DEFAULT_BACKBONES)
+    # 2 heads per backbone: both cross-entropy, each plus an alpha-weighted
+    # secondary calibration term -- order must match this list.
+    criteria = [
+        CombinedLoss(nn.CrossEntropyLoss(), BrierLoss(), alpha),
+        CombinedLoss(nn.CrossEntropyLoss(), SoftECELoss(), alpha),
+    ]
 
     hparams = {
         "epochs": int(epochs),
@@ -280,6 +291,8 @@ def train(
         "backbones": backbones,
         "pretrained": bool(pretrained),
         "num_unfrozen_layers": int(num_unfrozen_layers),
+        "heads_per_backbone": len(criteria),
+        "alpha": float(alpha),
         "early_stop_metric": str(early_stop_metric),
         "data_root": str(data_root),
     }
@@ -294,14 +307,13 @@ def train(
 
     model = Classifier(
         train_ds.num_classes, backbone_names=backbones, pretrained=pretrained,
-        num_unfrozen_layers=num_unfrozen_layers,
+        num_unfrozen_layers=num_unfrozen_layers, heads_per_backbone=len(criteria),
     ).to(device)
     optimizer = make_optimizer(model, lr_backbone=lr, lr_head=head_lr, weight_decay=weight_decay)
-    criterion = nn.CrossEntropyLoss()
 
     trainer = Trainer(
         model=model, train_loader=train_loader, val_loader=val_loader,
-        optimizer=optimizer, criterion=criterion, device=device,
+        optimizer=optimizer, criteria=criteria, device=device,
         patience=patience, early_stop_metric=early_stop_metric,
     )
     trainer.fit(epochs, output_dir=output_dir)
@@ -347,6 +359,9 @@ def main() -> None:
                         help="Initialize every backbone from timm's pretrained weights.")
     parser.add_argument("--num-unfrozen-layers", type=int, default=2,
                         help="Number of layers to unfreeze/fine-tune at the end of each backbone.")
+    parser.add_argument("--alpha", type=float, default=0.5,
+                        help="Weight on each head's secondary calibration loss "
+                             "(cross-entropy + alpha * Brier/ECE).")
     args = parser.parse_args()
     train(**vars(args))
 

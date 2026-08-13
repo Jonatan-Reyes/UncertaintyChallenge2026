@@ -33,9 +33,11 @@ from student.plotting import energy_score, plot_energy_ood_roc, plot_reliability
 def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, float]:
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     backbone_names = ckpt.get("backbone_names", DEFAULT_BACKBONES)
+    hparams = ckpt.get("hyperparameters", {})
     model = Classifier(
         int(ckpt["num_classes"]),
         backbone_names=backbone_names,
+        heads_per_backbone=hparams.get("heads_per_backbone", 2),
     )
     model.load_state_dict(ckpt["state_dict"])
     model.to(device).eval()
