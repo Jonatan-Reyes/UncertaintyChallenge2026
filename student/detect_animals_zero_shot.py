@@ -205,6 +205,158 @@ def detect_animals(
     return output_path
 
 
+def _find_split_image_path(data_root: Path, split: str, uid: str) -> Path | None:
+    """Resolve an image path for a uid under <data_root>/<split>/images/."""
+    images_dir = data_root / split / "images"
+    for ext in (".jpg", ".jpeg", ".png", ".bmp", ".webp"):
+        p = images_dir / f"{uid}{ext}"
+        if p.exists():
+            return p
+    return None
+
+
+def _load_detection_with_labels(
+    data_root: Path,
+    detection_csv: Path,
+    split: str = "val",
+) -> pd.DataFrame | None:
+    """Join detection output (uid, animal_present, max_confidence) with labels.csv.
+
+    For val-style labels we define ``has_animal`` as ``y != 0``.
+    """
+    det = pd.read_csv(detection_csv)
+    required_cols = {"uid", "animal_present", "max_confidence"}
+    if not required_cols.issubset(det.columns):
+        raise ValueError(
+            f"{detection_csv} must contain columns {sorted(required_cols)}"
+        )
+
+    labels_path = data_root / split / "labels.csv"
+    if not labels_path.exists():
+        print(f"skipping qualitative plot for {split}: labels not found at {labels_path}")
+        return None
+
+    labels = pd.read_csv(labels_path)
+    if "uid" not in labels.columns or "y" not in labels.columns:
+        raise ValueError(f"{labels_path} must contain at least uid,y columns")
+
+    det = det.copy()
+    labels = labels.copy()
+    det["uid"] = det["uid"].astype(str)
+    labels["uid"] = labels["uid"].astype(str)
+    labels["y"] = labels["y"].astype(int)
+    if "domain" in labels.columns:
+        labels["domain"] = labels["domain"].astype(str)
+    else:
+        labels["domain"] = "unknown"
+
+    merged = labels[["uid", "y", "domain"]].merge(
+        det[["uid", "animal_present", "max_confidence"]],
+        on="uid",
+        how="left",
+        sort=False,
+    )
+
+    merged = merged.dropna(subset=["animal_present", "max_confidence"]).copy()
+    merged["animal_present"] = merged["animal_present"].astype(int)
+    merged["max_confidence"] = merged["max_confidence"].astype(float)
+    merged["has_animal"] = (merged["y"] != 0).astype(int)
+    return merged
+
+
+def plot_grounding_dino_examples(
+    data_root: Path,
+    detection_csv: Path,
+    split: str = "val",
+    output_path: Path | None = None,
+    seed: int = 42,
+) -> Path | None:
+    """Plot 3 x 10 qualitative panels from Grounding DINO detections.
+
+    Row 1: 10 random images where Grounding DINO predicted animal_present=1.
+    Row 2: 10 random false negatives where y != 0 but animal_present=0.
+    Row 3: 10 lowest-confidence images among animal_present=1.
+
+    Titles include whether label indicates an animal (y != 0).
+    """
+    import random
+
+    import matplotlib.pyplot as plt
+
+    df = _load_detection_with_labels(data_root, detection_csv, split=split)
+    if df is None:
+        return None
+
+    rng = random.Random(seed)
+
+    row1 = df[df["animal_present"] == 1].copy()
+    row2 = df[(df["has_animal"] == 1) & (df["animal_present"] == 0)].copy()
+    row3 = df[df["animal_present"] == 1].sort_values("max_confidence", ascending=True).copy()
+
+    row1_uids = row1["uid"].tolist()
+    rng.shuffle(row1_uids)
+    row1_uids = row1_uids[:10]
+
+    row2_uids = row2["uid"].tolist()
+    rng.shuffle(row2_uids)
+    row2_uids = row2_uids[:10]
+
+    row3_uids = row3["uid"].tolist()[:10]
+
+    row_lookup = df.set_index("uid")
+    rows = [
+        ("DINO animal_present=1 (random)", row1_uids),
+        ("Label has animal (y!=0) but DINO missed", row2_uids),
+        ("Lowest max_confidence among DINO animal_present=1", row3_uids),
+    ]
+
+    fig, axes = plt.subplots(3, 10, figsize=(42, 14))
+    for row_idx, (row_title, uids) in enumerate(rows):
+        for col_idx in range(10):
+            ax = axes[row_idx, col_idx]
+            ax.axis("off")
+            if col_idx == 0:
+                ax.text(
+                    0.02,
+                    1.02,
+                    row_title,
+                    transform=ax.transAxes,
+                    fontsize=11,
+                    fontweight="bold",
+                    va="bottom",
+                )
+
+            if col_idx >= len(uids):
+                continue
+
+            uid = str(uids[col_idx])
+            row = row_lookup.loc[uid]
+            img_path = _find_split_image_path(data_root, split, uid)
+            if img_path is None:
+                ax.text(0.5, 0.5, f"missing\n{uid}", ha="center", va="center")
+                continue
+
+            image = Image.open(img_path).convert("RGB")
+            ax.imshow(image)
+            has_animal_text = "yes" if int(row["has_animal"]) == 1 else "no"
+            domain_text = str(row.get("domain", "unknown"))
+            ax.set_title(
+                f"uid={uid}\ndomain={domain_text} | conf={float(row['max_confidence']):.3f} | label animal={has_animal_text}",
+                fontsize=8,
+            )
+
+    fig.suptitle("Grounding DINO qualitative checks", fontsize=16)
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
+
+    if output_path is None:
+        output_path = detection_csv.with_name(f"{detection_csv.stem}_qualitative_grid.png")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=180)
+    plt.close(fig)
+    print(f"wrote {output_path}")
+    return output_path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Use a zero-shot Grounding DINO model to flag images containing any animal."
@@ -228,7 +380,7 @@ def main() -> None:
     parser.add_argument("--gpu", type=int, default=0)
     args = parser.parse_args()
 
-    detect_animals(
+    output_path = detect_animals(
         data_root=args.data_root,
         out_dir=args.out_dir,
         model_size=args.model_size,
@@ -241,6 +393,15 @@ def main() -> None:
         gpu=args.gpu,
         output_name=args.output_name,
     )
+
+    for split in args.splits:
+        plot_path = args.out_dir / f"{Path(args.output_name).stem}_{split}_qualitative_grid.png"
+        plot_grounding_dino_examples(
+            data_root=args.data_root,
+            detection_csv=output_path,
+            split=split,
+            output_path=plot_path,
+        )
 
 
 if __name__ == "__main__":
