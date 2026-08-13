@@ -24,8 +24,8 @@ echo $CUDA_VISIBLE_DEVICES
     --backbones vit_small_patch16_dinov3.lvd1689m vit_small_patch14_dinov2.lvd142m \
                 vit_base_patch16_siglip_224.webli convnext_tiny.fb_in22k \
                 eva02_small_patch14_224.mim_in22k \
-    --epochs 30 --batch-size 32 \
+    --epochs 30 --batch-size 64 \
     --lr 1e-4 --head-lr 1e-3 \
-    --num-unfrozen-layers 2 \
+    --num-unfrozen-layers 0 \
     --alpha 0.5 \
     --patience 3
