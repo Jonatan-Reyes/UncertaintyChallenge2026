@@ -38,7 +38,7 @@ def load_checkpoint(ckpt_path: Path, device) -> tuple[nn.Module, list]:
     model = Classifier(
         int(ckpt["num_classes"]),
         backbone_names=backbone_names,
-        heads_per_backbone=hparams.get("heads_per_backbone", 2),
+        heads_per_backbone=hparams.get("heads_per_backbone", 1),
     )
     model.load_state_dict(ckpt["state_dict"])
     model.to(device).eval()

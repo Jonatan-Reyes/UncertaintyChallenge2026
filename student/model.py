@@ -3,15 +3,13 @@
 Defines the ``Classifier`` nn.Module used by ``train``, ``eval``, and ``predict``.
 
 An ensemble of 5 different pretrained foundation vision backbones (not 5
-copies of the same one) — each gets 2 linear heads, both trained on
-cross-entropy plus an alpha-weighted secondary calibration term (one head
-adds Brier, the other adds ECE — see ``train.py``'s ``Trainer.criteria`` and
-``CombinedLoss`` below), and predictions are combined by averaging softmax
-probabilities across all 10 members. Diversity comes both from the
-backbones themselves (different architectures / pretraining objectives)
-and from each backbone's 2 heads optimizing different loss mixes. Most of
-each backbone is frozen; only its last 2 layers are fine-tuned alongside
-its heads.
+copies of the same one) — each gets its own linear head, trained on
+cross-entropy plus an alpha-weighted Brier term (see ``train.py``'s
+``Trainer.criteria`` and ``CombinedLoss`` below), and predictions are
+combined by averaging softmax probabilities across all 5 members. Diversity
+comes from the backbones themselves (different architectures / pretraining
+objectives). Most of each backbone is frozen; only its last 2 layers are
+fine-tuned alongside its head.
 
 The minimal contract (so train / eval / predict don't need to change):
 
@@ -25,8 +23,6 @@ from __future__ import annotations
 import timm
 import torch
 import torch.nn as nn
-
-from student.metrics import ECE_BINS
 
 # 5 different foundation backbones: 2 self-supervised ViTs (DINOv3, DINOv2),
 # 1 vision-language contrastive model (SigLIP), 1 CNN (ConvNeXt), 1 masked-
@@ -82,33 +78,6 @@ class BrierLoss(nn.Module):
         return ((probs - onehot) ** 2).sum(dim=1).mean()
 
 
-class SoftECELoss(nn.Module):
-    """Differentiable ECE surrogate: soft (sigmoid) bin membership instead of
-    the hard ``>=``/``<`` comparisons in ``metrics.ece``, so gradients can
-    flow through it — true ECE is piecewise-constant (~zero gradient
-    everywhere) and can't be used as a training loss directly.
-    """
-
-    def __init__(self, n_bins: int = ECE_BINS, sharpness: float = 50.0):
-        super().__init__()
-        self.register_buffer("edges", torch.linspace(0.0, 1.0, n_bins + 1))
-        self.sharpness = sharpness
-
-    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        probs = torch.softmax(logits, dim=1)
-        confs, preds = probs.max(dim=1)
-        correct = (preds == labels).float()
-        n = confs.shape[0]
-        loss = confs.new_zeros(())
-        for lo, hi in zip(self.edges[:-1], self.edges[1:]):
-            w = torch.sigmoid((confs - lo) * self.sharpness) - torch.sigmoid((confs - hi) * self.sharpness)
-            wsum = w.sum() + 1e-12
-            bin_conf = (w * confs).sum() / wsum
-            bin_acc = (w * correct).sum() / wsum
-            loss = loss + torch.abs(bin_conf - bin_acc) * (wsum / n)
-        return loss
-
-
 class CombinedLoss(nn.Module):
     """``primary(logits, labels) + alpha * secondary(logits, labels)``."""
 
@@ -124,9 +93,8 @@ class CombinedLoss(nn.Module):
 
 class Classifier(nn.Module):
     """Ensemble of foundation backbones, each with ``heads_per_backbone``
-    linear heads (default 2 — see ``train.py``'s ``Trainer.criteria``, built
-    from ``CombinedLoss``: cross-entropy plus an alpha-weighted secondary
-    calibration term, one head per secondary loss).
+    linear heads (default 1 — see ``train.py``'s ``Trainer.criteria``, built
+    from ``CombinedLoss``: cross-entropy plus an alpha-weighted Brier term).
 
     Every backbone is created via ``timm.create_model(..., num_classes=0)``
     (pooled features). All backbone parameters start frozen
@@ -143,7 +111,7 @@ class Classifier(nn.Module):
         backbone_names: list[str] | None = None,
         pretrained: bool = False,
         num_unfrozen_layers: int = 2,
-        heads_per_backbone: int = 2,
+        heads_per_backbone: int = 1,
     ):
         super().__init__()
         self.backbone_names = list(backbone_names) if backbone_names else list(DEFAULT_BACKBONES)

@@ -36,7 +36,7 @@ from student.data import (
     default_train_transform,
 )
 from student.eval import evaluate_val_by_domain, tta_predict
-from student.model import DEFAULT_BACKBONES, BrierLoss, Classifier, CombinedLoss, SoftECELoss
+from student.model import DEFAULT_BACKBONES, BrierLoss, Classifier, CombinedLoss
 from student.plotting import energy_score, plot_energy_ood_roc, plot_reliability_diagram
 
 
@@ -287,11 +287,14 @@ def train(
     print(device)
 
     backbones = list(backbones) if backbones else list(DEFAULT_BACKBONES)
-    # 2 heads per backbone: both cross-entropy, each plus an alpha-weighted
-    # secondary calibration term -- order must match this list.
+    # 1 head per backbone: cross-entropy plus an alpha-weighted Brier term.
+    # (Dropped the soft-ECE head: its gradient only acts on confidence, not
+    # correctness -- argmax isn't differentiable -- so it suppressed
+    # confidence on correctly-classified samples too, and since Brier is
+    # measured on the combined ensemble output, that damage leaked into
+    # every metric, not just ECE.)
     criteria = [
         CombinedLoss(nn.CrossEntropyLoss(), BrierLoss(), alpha),
-        CombinedLoss(nn.CrossEntropyLoss(), SoftECELoss(), alpha),
     ]
 
     hparams = {
