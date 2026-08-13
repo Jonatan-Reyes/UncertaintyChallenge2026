@@ -369,7 +369,7 @@ def train(
     expected_hw = model.input_size if model.input_size is not None else (224, 224)
     print(f"backbone={backbone} expected_input_size={expected_hw}")
 
-    train_ds = IWildCamChallengeDataset(data_root, "train", default_train_transform(expected_hw))
+    train_ds = IWildCamChallengeDataset(data_root, "train", default_train_transform())
     val_ds = IWildCamChallengeDataset(data_root, "val", default_eval_transform(expected_hw))
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,
                               num_workers=num_workers, drop_last=False)
