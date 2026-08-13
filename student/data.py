@@ -105,11 +105,34 @@ class IWildCamChallengeDataset(Dataset):
         return img, int(self.labels[idx])
 
 
-def default_train_transform(img_size: int | tuple[int, int] = IMG_SIZE) -> Callable:
-    resize_hw = _normalize_img_size(img_size)
+def default_train_transform(img_size=224):
     return transforms.Compose([
-        transforms.Resize(resize_hw),
+        transforms.Resize((img_size, img_size)),
+        transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0), ratio=(0.9, 1.1)),
         transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(20, fill=0),
+        transforms.RandomAffine(
+            degrees=0,
+            translate=(0.1, 0.1),
+            scale=(0.95, 1.05),
+            shear=10,
+            fill=0,
+        ),
+        transforms.ColorJitter(
+            brightness=0.5,
+            contrast=0.5,
+            saturation=0.4,
+            hue=0.05,
+        ),
+        transforms.RandomAutocontrast(p=0.2),
+        transforms.RandomEqualize(p=0.2),
+        transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0)),
+        transforms.RandomErasing(
+            p=0.2,
+            scale=(0.02, 0.12),
+            ratio=(0.3, 3.3),
+            inplace=False,
+        ),
         transforms.ToTensor(),
         transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
